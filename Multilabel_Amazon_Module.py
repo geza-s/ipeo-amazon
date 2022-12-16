@@ -59,7 +59,7 @@ class MultiLayerCNN(nn.Module):
         self.conv1 = nn.Conv2d(3, 10,
                                kernel_size=5)  # Input is a 3 plane 256x256 tensor (RBB) -> output 10 planes of 254x254
         self.pool_max = nn.MaxPool2d(2, 2)  # output of dim-2 x dim-2
-        self.conv2 = nn.Conv2d(10, 20, 5)  # input 10 planes 127x127, output 20 planes of 125x125
+        self.conv2 = nn.Conv2d(10, 20, kernel_size=5)  # input 10 planes 127x127, output 20 planes of 125x125
         self.pool_avg = nn.AvgPool2d(4, 4)
         self.fc = nn.Linear(20 * 27 * 27, 17)  # single dense layer for the network
         self.batchNorm = nn.BatchNorm2d(3)
