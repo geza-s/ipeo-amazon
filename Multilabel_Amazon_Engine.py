@@ -1,6 +1,6 @@
 from tqdm import tqdm
 import torch.nn as nn
-import torch.no_grad
+from torch import no_grad
 import torchvision.transforms.functional as F
 import numpy as np
 import pandas as pd
@@ -39,7 +39,7 @@ def validate(model, dataloader, device, loss_fn=nn.BCEWithLogitsLoss()):
     model.eval()
     accs, acc_scores, prec_scores, rec_scores, tot_loss, ham_loss = [], [], [], [], [], []
     print('Validating')
-    with torch.no_grad():
+    with no_grad():
         for i_batch, sample_batch in tqdm(enumerate(dataloader)):
             image_batch = sample_batch['image'].to(device)
             targets = sample_batch['labels'].to(device)
@@ -50,18 +50,18 @@ def validate(model, dataloader, device, loss_fn=nn.BCEWithLogitsLoss()):
             # Get loss (Sigmoid + Cross Entropy function)
             loss = loss_fn(out, targets)
             # Appending it to all the losses
-            tot_loss.append(loss.cpu().detach().numpy())
+            tot_loss.append(loss.cpu().detach().item())
 
             # apply sigmoid activation to get all the outputs between 0 and 1
             predicted = (sig(out) > 0.5).float().cpu().detach().numpy()
             ground_truth = targets.cpu().detach().numpy()
 
             # save metrics
-            accs.append(np.mean(np.array(predicted == ground_truth),axis=0))
+            accs.append(np.mean(np.array(predicted == ground_truth), axis=0).tolist())
             acc_scores.append(accuracy_score(ground_truth.flatten(), predicted.flatten()))
-            prec_scores.append(precision_score(ground_truth.flatten(),predicted.flatten()))
-            rec_scores.append(recall_score(ground_truth.flatten(),predicted.flatten()))
-            ham_loss.append(hamming_loss(ground_truth.flatten(),predicted.flatten()))
+            prec_scores.append(precision_score(ground_truth.flatten(), predicted.flatten()))
+            rec_scores.append(recall_score(ground_truth.flatten(), predicted.flatten()))
+            ham_loss.append(hamming_loss(ground_truth.flatten(), predicted.flatten()))
 
     return tot_loss, accs, acc_scores, prec_scores, rec_scores, ham_loss
 
@@ -103,25 +103,27 @@ def train_epoch(model, dataloader, device, lr=0.01, optimizer=None, loss_fn=nn.B
 
         # Metrics
         # All the losses for this epoch
-        tot_loss.append(loss.cpu().detach().numpy())
+        tot_loss.append(loss.cpu().detach().item())
         # Prediction of this batch and appending to all accuarcies of this epoch
-        predicted = (sig(out) > 0.6).float().cpu().detach().numpy()
+        predicted = (sig(out) > 0.5).float().cpu().detach().numpy()
         ground_truth = targets.cpu().detach().numpy()
 
-        #save all the metrics
-        accs.append(np.mean(np.array(predicted == ground_truth),axis=0))
+        # save all the metrics
+        accs.append(np.mean(np.array(predicted == ground_truth), axis=0).tolist())
         acc_scores.append(accuracy_score(ground_truth.flatten(), predicted.flatten()))
-        prec_scores.append(precision_score(ground_truth.flatten(),predicted.flatten()))
-        rec_scores.append(recall_score(ground_truth.flatten(),predicted.flatten()))
-        ham_loss.append(hamming_loss(ground_truth.flatten(),predicted.flatten()))
+        prec_scores.append(precision_score(ground_truth.flatten(), predicted.flatten()))
+        rec_scores.append(recall_score(ground_truth.flatten(), predicted.flatten()))
+        ham_loss.append(hamming_loss(ground_truth.flatten(), predicted.flatten()))
 
         if i_batch == 0:
             print(image_batch.size())
             print(np.shape(predicted), np.shape(ground_truth))
-            print(f"Predicted : {predicted}, calculated accuracy score: {np.mean(acc_scores)}, prediction score : {np.mean(prec_scores)}, recall score: {np.mean(rec_scores)}")
+            print(
+                f"Predicted : {predicted}, calculated accuracy score: {np.mean(acc_scores)}, prediction score : {np.mean(prec_scores)}, recall score: {np.mean(rec_scores)}")
 
         if i_batch % 20 == 0:  # print every ... mini-batches the mean loss up to now
-            print(f"Loss : {np.mean(tot_loss)}, calculated accuracy score: {np.mean(acc_scores)}, prediction score : {np.mean(prec_scores)}, recall score: {np.mean(rec_scores)}")
+            print(
+                f"Loss : {np.mean(tot_loss)}, calculated accuracy score: {np.mean(acc_scores)}, prediction score : {np.mean(prec_scores)}, recall score: {np.mean(rec_scores)}")
 
     return tot_loss, accs, acc_scores, prec_scores, rec_scores, ham_loss
 
@@ -136,53 +138,35 @@ def train(model, train_loader, validation_dataloader, device, optimizer=None, lr
     :param lr: default 0.01
     :param epochs: default 2
     :param loss_fn: default BCEWithLogitsLoss (sigmoid + Cross Entropy)
-    :return: results as a dictionary with 'train_loss', 'train_acc', 'val_loss', 'val_acc'
+    :return: results as a dictionary with 'train_loss', 'train_acc', 'train_acc_scores', 'train_prec_scores',
+     'train_rec_scores', 'train_ham_loss', 'val_loss', 'val_acc', 'val_acc_scores', 'val_prec_scores',
+     'val_rec_scores', 'val_ham_loss'
     """
     optimizer = optimizer or torch.optim.Adam(net.parameters(), lr=lr)
-    res = {'train_loss': [], 'train_acc': [], 'train_acc_scores':[], 'train_pred_scores':[], 'train_rec_scores':[],
+    res = {'train_loss': [], 'train_acc': [], 'train_acc_scores': [], 'train_prec_scores': [], 'train_rec_scores': [],
            'train_ham_loss': [],
-           'val_loss': [], 'val_acc': [],'val_acc_scores': [], 'val_pred_scores': [], 'val_rec_scores': [], 'val_ham_loss':[]}
+           'val_loss': [], 'val_acc': [], 'val_acc_scores': [], 'val_prec_scores': [], 'val_rec_scores': [],
+           'val_ham_loss': []}
     for ep in range(epochs):
         tl, ta, a_s, p_s, r_s, h_l = train_epoch(model, train_loader, optimizer=optimizer, lr=lr, loss_fn=loss_fn,
                                                  device=device)
         vl, va, va_s, vp_s, vr_s, vh_l = validate(model, validation_dataloader, loss_fn=loss_fn, device=device)
 
-        print(f"Epoch {ep:2}, Train acc={ta:.3f}, Val acc={va:.3f}, Train loss={tl:.3f}, Val loss={vl:.3f}")
+        # print(f"Epoch {ep:2}, Train acc={ta:.3f}, Val acc={va:.3f}, Train loss={tl:.3f}, Val loss={vl:.3f}")
         res['train_loss'].append(tl)
         res['train_acc'].append(ta)
         res['train_acc_scores'].append(a_s)
-        res['train_pred_scores'].append(p_s)
+        res['train_prec_scores'].append(p_s)
         res['train_rec_scores'].append(r_s)
         res['train_ham_loss'].append(h_l)
 
         res['val_loss'].append(vl)
         res['val_acc'].append(va)
         res['val_acc_scores'].append(va_s)
-        res['val_pred_scores'].append(vp_s)
+        res['val_prec_scores'].append(vp_s)
         res['val_rec_scores'].append(vp_s)
         res['val_ham_loss'].append(vh_l)
     return res
-
-
-def show_4_image_in_batch(sample_batched, tags):
-    """
-    Shows 4 first images from the batch of the Amazon Dataset
-    :param sample_batched: mini-batch of dataloader of Amazon Dataset. Dictionary with 'image', 'labels'
-    :param tags: All the unique labels
-    :return:
-    """
-    images_batch, labels = sample_batched['image'], sample_batched['labels']
-
-    fig, axs = plt.subplots(1, 4)
-    for i in range(4):
-        img = F.to_pil_image(images_batch[i])
-        axs[i].imshow(img)
-        ids = labels[i, :].numpy()
-        axs[i].set_title(f'#{i}:\n {tags[ids == 1]}')
-    fig.set_figheight(10)
-    fig.set_figwidth(12)
-    plt.tight_layout()
-    plt.show()
 
 
 def batch_prediction(batch, model, device="cuda", criterion=nn.BCEWithLogitsLoss()):
@@ -213,11 +197,32 @@ def batch_prediction(batch, model, device="cuda", criterion=nn.BCEWithLogitsLoss
     loss = criterion(y_hat, y)
 
     # Calculate accuracy for statistics
-    predicted = (sig(y_hat) > 0.8).float().cpu().detach().numpy()
+    predicted = (sig(y_hat) > 0.5).float().cpu().detach().numpy()
     ground_truth = y.cpu().detach().numpy()
     predictions = np.array((predicted == ground_truth), dtype=np.float64).mean(axis=0)
     accuracy = (np.array((predicted == ground_truth)).astype(np.float64).mean())
 
     return loss.cpu().detach().numpy(), accuracy, predictions
 
-#%%
+
+def show_4_image_in_batch(sample_batched, tags):
+    """
+    Shows 4 first images from the batch of the Amazon Dataset
+    :param sample_batched: mini-batch of dataloader of Amazon Dataset. Dictionary with 'image', 'labels'
+    :param tags: All the unique labels
+    :return:
+    """
+    images_batch, labels = sample_batched['image'], sample_batched['labels']
+
+    fig, axs = plt.subplots(1, 4)
+    for i in range(4):
+        img = F.to_pil_image(images_batch[i])
+        axs[i].imshow(img)
+        ids = labels[i, :].numpy()
+        axs[i].set_title(f'#{i}:\n {tags[ids == 1]}')
+    fig.set_figheight(10)
+    fig.set_figwidth(12)
+    plt.tight_layout()
+    plt.show()
+
+# %%
