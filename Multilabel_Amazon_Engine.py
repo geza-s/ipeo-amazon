@@ -77,7 +77,7 @@ def train_epoch(model, dataloader, device, lr=0.01, optimizer=None, loss_fn=nn.B
     :return:
     """
     sig = nn.Sigmoid()
-    optimizer = optimizer or torch.optim.Adam(net.parameters(), lr=lr)
+    optimizer = optimizer or torch.optim.Adam(model.parameters(), lr=lr)
     model.train()
     accs, acc_scores, prec_scores, rec_scores, tot_loss, ham_loss = [], [], [], [], [], []
     print('Training')
