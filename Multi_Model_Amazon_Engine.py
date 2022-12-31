@@ -1,11 +1,10 @@
 from tqdm import tqdm
 import torch.nn as nn
 from torch import no_grad
-import torchvision.transforms.functional as F
+from torch import max as torch_max
+
 import numpy as np
-import pandas as pd
-from skimage.io import imread
-import matplotlib.pyplot as plt
+
 from sklearn.metrics import accuracy_score, precision_score, recall_score, hamming_loss
 
 
@@ -51,7 +50,8 @@ def validate_dual(ground_model, cloud_model, dataloader, device, ground_loss_fn=
 
             # Prediction of this batch and appending to all accuracies of this epoch
             predicted_ground = (sig(out_ground) > 0.5).float().cpu().detach().numpy()
-            predicted_cloud = out_clouds.float().cpu().detach().numpy()
+            predicted_cloud = out_clouds.cpu().detach().numpy()
+            predicted_cloud = (predicted_cloud == predicted_cloud.max(axis=1, keepdims=True))
 
             predicted = np.hstack((predicted_ground, predicted_cloud))
             ground_truth = np.hstack((ground_target.cpu().detach().numpy(), cloud_target.cpu().detach().numpy()))
@@ -119,12 +119,13 @@ def train_epoch_dual(cloud_model, ground_model, dataloader, device, lr=0.01, gro
 
         # Metrics
         # All the losses for this epoch
-        loss = loss_ground + loss_clouds  # HERE TO CHECK AGAIN WHAT IS TOTAL LOSS !!!
+        loss = loss_ground + loss_clouds                    # HERE TO CHECK AGAIN WHAT IS TOTAL LOSS !!!
         tot_loss.append(loss.cpu().detach().item())
 
         # Prediction of this batch and appending to all accuarcies of this epoch
         predicted_ground = (sig(out_ground) > 0.5).float().cpu().detach().numpy()
-        predicted_cloud = out_clouds.float().cpu().detach().numpy()
+        predicted_cloud = out_clouds.cpu().detach().numpy()
+        predicted_cloud = (predicted_cloud == predicted_cloud.max(axis=1, keepdims=True))
 
         predicted = np.hstack((predicted_ground, predicted_cloud))
         ground_truth = np.hstack((ground_target.cpu().detach().numpy(), cloud_target.cpu().detach().numpy()))
@@ -136,7 +137,7 @@ def train_epoch_dual(cloud_model, ground_model, dataloader, device, lr=0.01, gro
         rec_scores.append(recall_score(ground_truth.flatten(), predicted.flatten()))
         ham_loss.append(hamming_loss(ground_truth.flatten(), predicted.flatten()))
 
-        if i_batch == 3:
+        if i_batch == 0:
             print(image_batch.size())
             print(np.shape(predicted), np.shape(ground_truth))
             print(
@@ -218,7 +219,6 @@ def batch_prediction_dual(batch, ground_model, cloud_model, device="cuda", groun
     cloud_model.eval()
 
     sig = nn.Sigmoid()
-    smax = nn.Softmax()
 
     # Retrieve image and label from the batch and
     x = batch['image'].to(device)
@@ -241,8 +241,9 @@ def batch_prediction_dual(batch, ground_model, cloud_model, device="cuda", groun
 
     # THe predictions
     ground_predicted = (sig(y_hat_ground) > 0.5).float().cpu().detach().numpy()
-    cloud_predicted = smax(y_cloud).cpu().detach().numpy()
-    predicted = np.hstack((ground_predicted, cloud_predicted))
+    _, cloud_predicted = torch_max(y_hat_cloud, 1)
+
+    predicted = np.hstack((ground_predicted, cloud_predicted.cpu().detach().numpy))
 
     # The targeted values
     ground_target = y_ground.cpu().detach().numpy()
