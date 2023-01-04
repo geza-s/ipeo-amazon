@@ -2,10 +2,61 @@ from tqdm import tqdm
 import torch.nn as nn
 from torch import no_grad
 from torch import max as torch_max
-
 import numpy as np
+from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, hamming_loss
+from sklearn import metrics
 
-from sklearn.metrics import accuracy_score, precision_score, recall_score, hamming_loss
+def calculate_metrics(pred, target, batch_loss):
+    """
+    Calculates the following metrics: (precision, recall, f1) with micro, macro and samples averaging.
+    Additionally, hamming loss is also calculated.
+    For some later use, batch loss, as calculated per chosen criterion, is also added
+    :param pred: prediction array
+    :param target: targeted value (ground truth)
+    :return: dictionary with keys: "X/precision", "X/recall", "X/f1" with X='micro', 'macro' or 'samples',
+    and also 'hamming_loss'
+    """
+    results = {'micro/precision': precision_score(y_true=target, y_pred=pred, average='micro', zero_division=0),
+               'micro/recall': recall_score(y_true=target, y_pred=pred, average='micro', zero_division=0),
+               'micro/f1': f1_score(y_true=target, y_pred=pred, average='micro', zero_division=0),
+               'macro/precision': precision_score(y_true=target, y_pred=pred, average='macro', zero_division=0),
+               'macro/recall': recall_score(y_true=target, y_pred=pred, average='macro', zero_division=0),
+               'macro/f1': f1_score(y_true=target, y_pred=pred, average='macro', zero_division=0),
+               'samples/precision': precision_score(y_true=target, y_pred=pred, average='samples', zero_division=0),
+               'samples/recall': recall_score(y_true=target, y_pred=pred, average='samples', zero_division=0),
+               'samples/f1': f1_score(y_true=target, y_pred=pred, average='samples', zero_division=0),
+               'hamming_loss': hamming_loss(y_true=target, y_pred=pred),
+               'total_loss': batch_loss
+               }
+    return results
+
+
+def append_metrics(all_metrics_dict, batch_metrics):
+    """
+    Appends the batch measured metrics to whole batch metrics
+    :param all_metrics_dict: dictionary with all the metrics saved
+    :param batch_metrics: dictionary with same metrics but only for the batch
+    :return: the updated dictionary with all lists of metrics
+    """
+    for key in batch_metrics.keys():
+        metric_list = all_metrics_dict[key]
+        metric_list.append(batch_metrics[key])
+        all_metrics_dict[key] = metric_list
+    return all_metrics_dict
+
+
+def append_mean_metrics(all_metrics_dict, batch_metrics):
+    """
+    Appends the mean value for each metric
+    :param all_metrics_dict:
+    :param batch_metrics:
+    :return:
+    """
+    for key in batch_metrics.keys():
+        overall_metric_list = all_metrics_dict[key]
+        overall_metric_list.append(np.mean(batch_metrics[key]))
+        all_metrics_dict[key] = overall_metric_list
+    return all_metrics_dict
 
 
 def validate_dual(ground_model, cloud_model, dataloader, device, ground_loss_fn=nn.BCEWithLogitsLoss(),
@@ -18,17 +69,20 @@ def validate_dual(ground_model, cloud_model, dataloader, device, ground_loss_fn=
     :param device: device : "cuda" or "cpu"
     :param ground_loss_fn: default = BCEWithLogitsLoss() for multiple ground-label classification
     :param cloud_loss_fn: default = BCELoss for 3 cloud classes classification
-    :return: 5 numpy arrays for : total loss array, all accuracy array, precision score array,recall score array
+    :return: ...
     """
 
-    sig = nn.Sigmoid()
-    smax = nn.Softmax()
+    sig = nn.Sigmoid() #sigmoid function needed for estimated prediction
 
     ground_model.eval()
     cloud_model.eval()
 
-    accs, acc_scores, prec_scores, rec_scores, tot_loss, ham_loss = [], [], [], [], [], []
+    overall_metrics = {'micro/precision': [], 'micro/recall': [], 'micro/f1': [], 'macro/precision': [],
+                     'macro/recall': [], 'macro/f1': [], 'samples/precision': [], 'samples/recall': [],
+                     'samples/f1': [], 'hamming_loss': [], 'total_loss':[]}
+
     print('Validating')
+
     with no_grad():
         for i_batch, sample_batch in tqdm(enumerate(dataloader)):
             image_batch = sample_batch['image'].to(device)
@@ -46,7 +100,7 @@ def validate_dual(ground_model, cloud_model, dataloader, device, ground_loss_fn=
             # Metrics
             # All the losses for this epoch
             loss = loss_ground + loss_clouds  # HERE TO CHECK AGAIN WHAT IS TOTAL LOSS !!!
-            tot_loss.append(loss.cpu().detach().item())
+            #tot_loss.append(loss.cpu().detach().item())
 
             # Prediction of this batch and appending to all accuracies of this epoch
             predicted_ground = (sig(out_ground) > 0.5).float().cpu().detach().numpy()
@@ -57,13 +111,18 @@ def validate_dual(ground_model, cloud_model, dataloader, device, ground_loss_fn=
             ground_truth = np.hstack((ground_target.cpu().detach().numpy(), cloud_target.cpu().detach().numpy()))
 
             # save metrics
-            accs.append(np.mean(np.array(predicted == ground_truth), axis=0).tolist())
-            acc_scores.append(accuracy_score(ground_truth.flatten(), predicted.flatten()))
-            prec_scores.append(precision_score(ground_truth.flatten(), predicted.flatten()))
-            rec_scores.append(recall_score(ground_truth.flatten(), predicted.flatten()))
-            ham_loss.append(hamming_loss(ground_truth.flatten(), predicted.flatten()))
+            batch_metrics = calculate_metrics(predicted, ground_truth, loss.cpu().detach().item())
 
-    return tot_loss, accs, acc_scores, prec_scores, rec_scores, ham_loss
+            # accs.append(np.mean(np.array(predicted == ground_truth), axis=0).tolist())
+            # acc_scores.append(accuracy_score(ground_truth.flatten(), predicted.flatten()))
+            # prec_scores.append(precision_score(ground_truth.flatten(), predicted.flatten()))
+            # rec_scores.append(recall_score(ground_truth.flatten(), predicted.flatten()))
+            # ham_loss.append(hamming_loss(ground_truth.flatten(), predicted.flatten()))
+
+            # Append metrics to the overall epoch metrics measures
+            append_metrics(overall_metrics, batch_metrics)
+
+    return overall_metrics
 
 
 def train_epoch_dual(cloud_model, ground_model, dataloader, device, lr=0.01, ground_optimizer=None,
@@ -88,7 +147,9 @@ def train_epoch_dual(cloud_model, ground_model, dataloader, device, lr=0.01, gro
     cloud_model.train()
     ground_model.train()
 
-    accs, acc_scores, prec_scores, rec_scores, tot_loss, ham_loss = [], [], [], [], [], []
+    epoch_metrics = {'micro/precision': [], 'micro/recall': [], 'micro/f1': [], 'macro/precision': [],
+                     'macro/recall': [], 'macro/f1': [], 'samples/precision': [], 'samples/recall': [],
+                     'samples/f1': [], 'hamming_loss': [], 'total_loss':[]}
 
     print('Training')
     for i_batch, sample_batch in tqdm(enumerate(dataloader)):
@@ -119,8 +180,9 @@ def train_epoch_dual(cloud_model, ground_model, dataloader, device, lr=0.01, gro
 
         # Metrics
         # All the losses for this epoch
-        loss = loss_ground + loss_clouds                    # HERE TO CHECK AGAIN WHAT IS TOTAL LOSS !!!
-        tot_loss.append(loss.cpu().detach().item())
+        loss = loss_ground + loss_clouds  # HERE TO CHECK AGAIN WHAT IS TOTAL LOSS !!!
+
+        #tot_loss.append(loss.cpu().detach().item())
 
         # Prediction of this batch and appending to all accuarcies of this epoch
         predicted_ground = (sig(out_ground) > 0.5).float().cpu().detach().numpy()
@@ -130,24 +192,36 @@ def train_epoch_dual(cloud_model, ground_model, dataloader, device, lr=0.01, gro
         predicted = np.hstack((predicted_ground, predicted_cloud))
         ground_truth = np.hstack((ground_target.cpu().detach().numpy(), cloud_target.cpu().detach().numpy()))
 
-        # save all the metrics
-        accs.append(np.mean(np.array(predicted == ground_truth), axis=0).tolist())
-        acc_scores.append(accuracy_score(ground_truth.flatten(), predicted.flatten()))
-        prec_scores.append(precision_score(ground_truth.flatten(), predicted.flatten()))
-        rec_scores.append(recall_score(ground_truth.flatten(), predicted.flatten()))
-        ham_loss.append(hamming_loss(ground_truth.flatten(), predicted.flatten()))
+        # get the metrics
+        batch_metrics = calculate_metrics(predicted, ground_truth, loss.cpu().detach().item())
+
+        # accs.append(np.mean(np.array(predicted == ground_truth), axis=0).tolist())
+        # acc_scores.append(accuracy_score(ground_truth.flatten(), predicted.flatten()))
+        # prec_scores.append(precision_score(ground_truth.flatten(), predicted.flatten()))
+        # rec_scores.append(recall_score(ground_truth.flatten(), predicted.flatten()))
+        # ham_loss.append(hamming_loss(ground_truth.flatten(), predicted.flatten()))
+
+        # Append metrics to the overall epoch metrics measures
+        append_metrics(epoch_metrics, batch_metrics)
 
         if i_batch == 0:
             print(image_batch.size())
             print(np.shape(predicted), np.shape(ground_truth))
-            print(
-                f"Predicted : {predicted}, calculated accuracy score: {np.mean(acc_scores)}, prediction score : {np.mean(prec_scores)}, recall score: {np.mean(rec_scores)}")
-            break
-        if i_batch % 20 == 0:  # print every ... mini-batches the mean loss up to now
-            print(
-                f"Loss : {np.mean(tot_loss)}, calculated accuracy score: {np.mean(acc_scores)}, prediction score : {np.mean(prec_scores)}, recall score: {np.mean(rec_scores)}")
+            print("iter:{:3d} training:"
+                  "micro f1: {:.3f}"
+                  "macro f1: {:.3f} "
+                  "samples f1: {:.3f}".format(i_batch, batch_metrics['micro/f1'], batch_metrics['macro/f1'],
+                                              batch_metrics['samples/f1']))
+            continue
 
-    return tot_loss, accs, acc_scores, prec_scores, rec_scores, ham_loss
+        if i_batch % 20 == 0:  # print every ... mini-batches the mean loss up to now
+            print("iter:{:3d} training:"
+                  "micro f1: {:.3f}"
+                  "macro f1: {:.3f} "
+                  "samples f1: {:.3f}".format(i_batch, batch_metrics['micro/f1'], batch_metrics['macro/f1'],
+                                              batch_metrics['samples/f1']))
+
+    return epoch_metrics
 
 
 def train_dual(ground_model, cloud_model, train_loader, validation_dataloader, device, ground_optimizer=None,
@@ -172,35 +246,31 @@ def train_dual(ground_model, cloud_model, train_loader, validation_dataloader, d
     ground_optimizer = ground_optimizer or torch.optim.Adam(ground_model.parameters(), lr=lr)
     cloud_optimizer = cloud_optimizer or torch.optim.Adam(cloud_model.parameters(), lr=lr)
 
-    res = {'train_loss': [], 'train_acc': [], 'train_acc_scores': [], 'train_prec_scores': [], 'train_rec_scores': [],
-           'train_ham_loss': [],
-           'val_loss': [], 'val_acc': [], 'val_acc_scores': [], 'val_prec_scores': [], 'val_rec_scores': [],
-           'val_ham_loss': []}
+    overall_metrics = {'training': {'micro/precision': [], 'micro/recall': [], 'micro/f1': [], 'macro/precision': [],
+                                    'macro/recall': [], 'macro/f1': [], 'samples/precision': [], 'samples/recall': [],
+                                    'samples/f1': [], 'hamming_loss': [], 'total_loss':[]},
+                       'validating': {'micro/precision': [], 'micro/recall': [], 'micro/f1': [], 'macro/precision': [],
+                                      'macro/recall': [], 'macro/f1': [], 'samples/precision': [], 'samples/recall': [],
+                                      'samples/f1': [], 'hamming_loss': [], 'total_loss':[]}
+                       }
+
     for ep in range(epochs):
-        tl, ta, a_s, p_s, r_s, h_l = train_epoch_dual(cloud_model, ground_model, train_loader, device=device,
+        epoch_metrics = train_epoch_dual(cloud_model, ground_model, train_loader, device=device,
                                                       ground_optimizer=ground_optimizer,
                                                       cloud_optimizer=cloud_optimizer, lr=lr,
                                                       ground_loss_fn=ground_loss_fn,
                                                       cloud_loss_fn=cloud_loss_fn)
-        vl, va, va_s, vp_s, vr_s, vh_l = validate_dual(ground_model, cloud_model, validation_dataloader,
+        val_metrics = validate_dual(ground_model, cloud_model, validation_dataloader,
                                                        ground_loss_fn=ground_loss_fn,
                                                        cloud_loss_fn=cloud_loss_fn, device=device)
 
         # print(f"Epoch {ep:2}, Train acc={ta:.3f}, Val acc={va:.3f}, Train loss={tl:.3f}, Val loss={vl:.3f}")
-        res['train_loss'].append(tl)
-        res['train_acc'].append(ta)
-        res['train_acc_scores'].append(a_s)
-        res['train_prec_scores'].append(p_s)
-        res['train_rec_scores'].append(r_s)
-        res['train_ham_loss'].append(h_l)
 
-        res['val_loss'].append(vl)
-        res['val_acc'].append(va)
-        res['val_acc_scores'].append(va_s)
-        res['val_prec_scores'].append(vp_s)
-        res['val_rec_scores'].append(vp_s)
-        res['val_ham_loss'].append(vh_l)
-    return res
+        # Append all the metrics
+        append_mean_metrics(overall_metrics['training'], epoch_metrics)
+        append_mean_metrics(overall_metrics['validating'], val_metrics)
+
+    return overall_metrics
 
 
 def batch_prediction_dual(batch, ground_model, cloud_model, device="cuda", ground_criterion=nn.BCEWithLogitsLoss(),
@@ -252,8 +322,8 @@ def batch_prediction_dual(batch, ground_model, cloud_model, device="cuda", groun
 
     # The according metrics
     predictions = np.array((predicted == ground_truth), dtype=np.float64).mean(axis=0)
-    accuracy = (np.array((predicted == ground_truth)).astype(np.float64).mean())
+    #accuracy = (np.array((predicted == ground_truth)).astype(np.float64).mean())
 
-    return loss.cpu().detach().numpy(), accuracy, predictions
+    bach_metrics = calculate_metrics(predicted, ground_truth, loss.cpu().detach().numpy())
 
-#%%
+    return bach_metrics, predictions
