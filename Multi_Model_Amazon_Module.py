@@ -66,7 +66,7 @@ class CloudCNN(nn.Module):
                                kernel_size=10)  # Input is a 3 plane 256x256 tensor (RBB) ->
         # output 10 planes of 218x218
         self.pool_max = nn.MaxPool2d(4, 4)  # output of dim-2 x dim-2
-        self.conv2 = nn.Conv2d(10, 20, 5)  # input 10 planes 127x127, output 20 planes of 125x125
+        self.conv2 = nn.Conv2d(10, 20, kernel_size=5)  # input 10 planes 127x127, output 20 planes of 125x125
         self.pool_avg = nn.AvgPool2d(2, 2)
         self.fc = nn.Linear(13520, 3)  # single dense layer for the network
         self.batchNorm = nn.BatchNorm2d(3)
