@@ -6,10 +6,14 @@ import numpy as np
 import pandas as pd
 from skimage.io import imread
 import matplotlib.pyplot as plt
-from sklearn.metrics import accuracy_score, precision_score, recall_score, hamming_loss, f1_score
+import os
+from torch.optim import Adam
+from sklearn.metrics import accuracy_score, precision_score, recall_score, hamming_loss, f1_score, classification_report
+import seaborn as sns
 
-
-# from sklearn import metrics
+tags = ['haze', 'primary', 'agriculture', 'clear', 'water', 'habitation', 'road', 'cultivation', 'slash_burn',
+        'cloudy', 'partly_cloudy', 'conventional_mine', 'bare_ground', 'artisinal_mine', 'blooming',
+        'selective_logging', 'blow_down']
 
 
 def checking_folder(data_folder='../IPEO_Planet_project'):
@@ -29,13 +33,14 @@ def checking_folder(data_folder='../IPEO_Planet_project'):
     return corrupted_files
 
 
-def calculate_metrics(pred, target, batch_loss):
+def calculate_metrics(pred, target, batch_loss=None):
     """
     Calculates the following metrics: (precision, recall, f1) with micro, macro and samples averaging.
     Additionally, hamming loss is also calculated.
     For some later use, batch loss, as calculated per chosen criterion, is also added
     :param pred: prediction array
     :param target: targeted value (ground truth)
+    :param batch_loss: batch_loss
     :return: dictionary with keys: "X/precision", "X/recall", "X/f1" with X='micro', 'macro' or 'samples',
     and also 'hamming_loss'
     """
@@ -145,7 +150,7 @@ def train_epoch(model, dataloader, device, lr=0.01, optimizer=None, loss_fn=nn.B
     :return:
     """
     sig = nn.Sigmoid()
-    optimizer = optimizer or torch.optim.Adam(model.parameters(), lr=lr)
+    optimizer = optimizer or Adam(model.parameters(), lr=lr)
     model.train()
     # accs, acc_scores, prec_scores, rec_scores, tot_loss, ham_loss = [], [], [], [], [], []
     epoch_metrics = {'micro/precision': [], 'micro/recall': [], 'micro/f1': [], 'macro/precision': [],
@@ -246,7 +251,7 @@ def train(model, train_loader, validation_dataloader, device, optimizer=None, lr
      'train_rec_scores', 'train_ham_loss', 'val_loss', 'val_acc', 'val_acc_scores', 'val_prec_scores',
      'val_rec_scores', 'val_ham_loss'
     """
-    optimizer = optimizer or torch.optim.Adam(net.parameters(), lr=lr)
+    optimizer = optimizer or Adam(model.parameters(), lr=lr)
     # res = {'train_loss': [], 'train_acc': [], 'train_acc_scores': [], 'train_prec_scores': [], 'train_rec_scores': [],
     #       'train_ham_loss': [],
     #       'val_loss': [], 'val_acc': [], 'val_acc_scores': [], 'val_prec_scores': [], 'val_rec_scores': [],
@@ -254,7 +259,7 @@ def train(model, train_loader, validation_dataloader, device, optimizer=None, lr
 
     overall_metrics = {'training': {'micro/precision': [], 'micro/recall': [], 'micro/f1': [], 'macro/precision': [],
                                     'macro/recall': [], 'macro/f1': [], 'samples/precision': [], 'samples/recall': [],
-                                    'samples/f1': [], 'hamming_loss': [], 'total_loss': []},
+                                    'samples/f1': [], 'hamming_loss': [], 'total_loss': [], 'report': []},
                        'validating': {'micro/precision': [], 'micro/recall': [], 'micro/f1': [], 'macro/precision': [],
                                       'macro/recall': [], 'macro/f1': [], 'samples/precision': [], 'samples/recall': [],
                                       'samples/f1': [], 'hamming_loss': [], 'total_loss': []}
@@ -320,10 +325,13 @@ def batch_prediction(batch, model, device="cuda", criterion=nn.BCEWithLogitsLoss
     # Calculate accuracy for statistics
     predicted = (sig(y_hat) > 0.5).float().cpu().detach().numpy()
     ground_truth = y.cpu().detach().numpy()
+
     predictions = np.array((predicted == ground_truth), dtype=np.float64).mean(axis=0)
     accuracy = (np.array((predicted == ground_truth)).astype(np.float64).mean())
 
     return loss.cpu().detach().numpy(), accuracy, predictions
+
+
 
 
 def show_4_image_in_batch(images_batch, predicted_labels):
@@ -345,8 +353,82 @@ def show_4_image_in_batch(images_batch, predicted_labels):
         img = F.to_pil_image(images_batch[i])
         axs[i].imshow(img)
         ids = num_tags[predicted_labels[i, :] == 1.0]
-        axs[i].set_title(f'#{i}:\n {ids}')
+        names = [tags[ix] for ix in ids]
+        axs[i].set_title(f'#{i}:\n {names}')
     fig.set_figheight(10)
     fig.set_figwidth(12)
     plt.tight_layout()
     plt.show()
+
+
+def batch_prediction_s(batch, model, device="cuda", criterion=nn.BCEWithLogitsLoss()):
+    """
+    Predict the values from model for batch given. Function for the testing of the model.
+    :param criterion:
+    :param batch: batch composed of 'image' and 'labels'
+    :param model: model of interest
+    :param device: on which device run the thing
+    :return: loss,accuracy
+    """
+    model.eval()
+    sig = nn.Sigmoid()
+
+    # Retrieve image and label from the batch
+    x = batch['image']
+    y = batch['labels']
+
+    # move model and code to GPU
+    model = model.to(device)
+    x = x.to(device)
+    y = y.to(device)
+
+    # Forward pass
+    y_hat = model(x)
+
+    # Loss calculation (only for statistics)
+    loss = criterion(y_hat, y)
+
+    # Calculate accuracy for statistics
+    predicted = (sig(y_hat) > 0.5).float().cpu().detach().numpy()
+    ground_truth = y.cpu().detach().numpy()
+
+    predictions = np.array((predicted == ground_truth), dtype=np.float64).mean(axis=0)
+
+    return loss.cpu().detach().numpy(), predicted, ground_truth, predictions
+
+
+def compute_metrics(test_dataloader, model, device, tags):
+    """
+    Predict the values from model for test_dataloader given. Function for the testing of the model.
+    :param test_dataloader:
+    :param model: model of interest
+    :param device: on which device run the thing
+    :param tags: name of the classes
+    :return: report, losses
+    """
+
+    # store stats
+    losses = []
+    count = 0
+
+    for batch in tqdm(test_dataloader):
+        # TODO run prediction_step
+        loss, predicted, ground_truth, predictions = batch_prediction_s(batch, model, device=device)
+
+        # append to stats
+        losses.append(loss)
+
+        # accuracies.append(accuracy)
+        if count == 0:
+            all_predicted = predicted
+            all_truth = ground_truth
+            all_prediction = predictions
+            count = 1
+        else:
+            all_predicted = np.vstack((all_predicted,predicted))
+            all_truth = np.vstack((all_truth,ground_truth))
+            all_prediction = np.vstack((all_prediction,predictions))
+
+    report = classification_report(y_true=all_truth, y_pred=all_predicted, output_dict=True, target_names=tags,zero_division=0)
+    sns.heatmap(pd.DataFrame(report).iloc[:-1, :].T, annot=True, cmap="mako")
+    return report, losses, all_prediction
