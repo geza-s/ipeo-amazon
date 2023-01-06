@@ -35,60 +35,70 @@ class AdjustSaturation(object):
 class GroundCNN(nn.Module):
     def __init__(self):
         super(GroundCNN, self).__init__()
+        self.dropped = nn.Dropout(p=0.1, inplace=False)
         self.conv1 = nn.Conv2d(3, 10,
                                kernel_size=5)  # Input is a 3 plane 256x256 tensor (RBB) -> output 10 planes of 254x254
-        self.pool_max = nn.MaxPool2d(2, 2)  # output of dim-2 x dim-2
+        self.pool_max = nn.MaxPool2d(3)  # output of dim-2 x dim-2
         self.conv2 = nn.Conv2d(10, 20, kernel_size=5)  # input 10 planes 127x127, output 20 planes of 125x125
-        self.pool_avg = nn.AvgPool2d(4, 4)
-        self.fc = nn.Linear(20 * 27 * 27, 14)  # single dense layer for the network
+        self.pool_avg = nn.AvgPool2d(3)
+        self.conv3 = nn.Conv2d(20, 60, kernel_size=5)
+        self.fc1 = nn.Linear(60 * 7 * 7, 1000)  # single dense layer for the network
+        self.fc2 = nn.Linear(1000,14)
         self.batchNorm = nn.BatchNorm2d(3)
-        self.loss = nn.BCELoss()
 
     def forward(self, x):
         x = self.batchNorm(x)
         # print(f"step 1 : {x.shape}")
         x = self.pool_max(nn.functional.relu(self.conv1(x)))
+        x = self.dropped(x)
         # print(f"step 2 : {x.shape}")
-        x = self.pool_avg(x)
-        # print(f"step 3 : {x.shape}")
         x = nn.functional.relu(self.conv2(x))
+        x = self.pool_avg(x)
+        x = self.dropped(x)
+        # print(f"step 3 : {x.shape}")
+        x = nn.functional.relu(self.conv3(x))
+        x = self.pool_max(x)
+        x = self.dropped(x)
         # print(f"step 4 : {x.shape}")
-        x = x.view(-1, 20 * 27 * 27)
+        x = x.view(-1, 60 * 7 * 7)
         # print(f"step 5 : {x.shape}")
-        x = self.fc(x)
+        x = self.fc1(x)
+        x = self.dropped(x)
+        # print(f"step 6 : {x.shape}")
+        x = self.fc2(x)
         return x
 
 
 class CloudCNN(nn.Module):
     def __init__(self):
         super(CloudCNN, self).__init__()
+        self.batchNorm = nn.BatchNorm2d(3)
+        self.dropped = nn.Dropout(p=0.1, inplace=False)
         self.conv1 = nn.Conv2d(3, 10,
                                kernel_size=10)  # Input is a 3 plane 256x256 tensor (RBB) ->
         # output 10 planes of 218x218
-        self.pool_max = nn.MaxPool2d(4, 4)  # output of dim-2 x dim-2
-        self.conv2 = nn.Conv2d(10, 20, kernel_size=5)  # input 10 planes 127x127, output 20 planes of 125x125
-        self.pool_avg = nn.AvgPool2d(2, 2)
-        self.fc = nn.Linear(13520, 3)  # single dense layer for the network
-        self.batchNorm = nn.BatchNorm2d(3)
-        self.sig = nn.Sigmoid()
-        self.dropped = nn.Dropout(p=0.1, inplace=False)
+        self.pool_max = nn.MaxPool2d(4)  # output of dim-2 x dim-2
+        self.conv2 = nn.Conv2d(10, 30, kernel_size=5)  # input 10 planes 127x127, output 20 planes of 125x125
+        self.pool_avg = nn.AvgPool2d(4)
+        self.fc1 = nn.Linear(30*14*14, 100)  # first dense layer for the network
+        self.fc2 = nn.Linear(100, 3)  # second dense layer
         self.smax = nn.Softmax(dim=1)
 
     def forward(self, x):
-        # x = self.conv1(x)
-        # print(f"step 0 : {x.shape}")
         x = self.batchNorm(x)
-        #print(f"step 1 : {x.shape}")
-        x = self.dropped(self.pool_max(nn.functional.relu(self.conv1(x))))
-        #print(f"step 2 : {x.shape}")
-        x = self.pool_avg(x)
-        #print(f"step 3 : {x.shape}")
-        x = self.dropped(nn.functional.relu(self.conv2(x)))
-        #print(f"step 4 : {x.shape}")
-        x = x.view(-1, 20 *26*26)
-        #print(f"step 5 : {x.shape}")
-        x = self.fc(x)
-        #print(f"step 6 : {x.shape}")
+        # print(f"step 0 : {x.shape}")
+        x = self.pool_max(nn.functional.relu(self.conv1(x)))
+        x = self.dropped(x)
+        # print(f"step 1 : {x.shape}")
+        x = self.pool_avg(nn.functional.relu(self.conv2(x)))
+        x = self.dropped(x)
+        # print(f"step 2 : {x.shape}")
+        x = x.view(-1, 30*14*14)
+        # print(f"step 3 : {x.shape}")
+        x = self.fc1(x)
+        # print(f"step 4 : {x.shape}")
+        x = self.fc2(x)
+        # print(f"step 5 : {x.shape}")
         return self.smax(x)
 
 

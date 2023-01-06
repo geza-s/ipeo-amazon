@@ -2,11 +2,11 @@ from tqdm import tqdm
 import torch.nn as nn
 from torch import no_grad
 from torch import max as torch_max
+from torch.optim import Adam
 import numpy as np
 import matplotlib.pyplot as plt
 from torchvision.transforms.functional import to_pil_image
-from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, hamming_loss
-from sklearn import metrics
+from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, hamming_loss, confusion_matrix
 
 
 def calculate_metrics(pred, target, batch_loss):
@@ -103,7 +103,6 @@ def validate_dual(ground_model, cloud_model, dataloader, device, ground_loss_fn=
             # Metrics
             # All the losses for this epoch
             loss = loss_ground + loss_clouds  # HERE TO CHECK AGAIN WHAT IS TOTAL LOSS !!!
-            # tot_loss.append(loss.cpu().detach().item())
 
             # Prediction of this batch and appending to all accuracies of this epoch
             predicted_ground = (sig(out_ground) > 0.5).float().cpu().detach().numpy()
@@ -115,12 +114,6 @@ def validate_dual(ground_model, cloud_model, dataloader, device, ground_loss_fn=
 
             # save metrics
             batch_metrics = calculate_metrics(predicted, ground_truth, loss.cpu().detach().item())
-
-            # accs.append(np.mean(np.array(predicted == ground_truth), axis=0).tolist())
-            # acc_scores.append(accuracy_score(ground_truth.flatten(), predicted.flatten()))
-            # prec_scores.append(precision_score(ground_truth.flatten(), predicted.flatten()))
-            # rec_scores.append(recall_score(ground_truth.flatten(), predicted.flatten()))
-            # ham_loss.append(hamming_loss(ground_truth.flatten(), predicted.flatten()))
 
             # Append metrics to the overall epoch metrics measures
             append_metrics(overall_metrics, batch_metrics)
@@ -144,8 +137,8 @@ def train_epoch_dual(cloud_model, ground_model, dataloader, device, lr=0.01, gro
     :return: [tot_loss, accs, acc_scores, prec_scores, rec_scores, ham_loss]
     """
     sig = nn.Sigmoid()
-    clouds_optimizer = cloud_optimizer or torch.optim.Adam(cloud_model.parameters(), lr=lr)
-    ground_optimizer = ground_optimizer or torch.optim.Adam(ground_model.parameters(), lr=lr)
+    clouds_optimizer = cloud_optimizer or Adam(cloud_model.parameters(), lr=lr)
+    ground_optimizer = ground_optimizer or Adam(ground_model.parameters(), lr=lr)
 
     cloud_model.train()
     ground_model.train()
@@ -237,7 +230,7 @@ def train_epoch_dual(cloud_model, ground_model, dataloader, device, lr=0.01, gro
             print(f"Cloud metrics : {cloud_batch_metrics['accuracy']} and loss:{cloud_batch_metrics['total_loss']}")
             continue
 
-        if i_batch % 20 == 0:  # print every ... mini-batches the mean loss up to now
+        if i_batch % 30 == 0:  # print every ... mini-batches the mean loss up to now
             print("iter:{:3d} training:"
                   "micro f1: {:.3f}"
                   "macro f1: {:.3f} "
@@ -252,7 +245,7 @@ def train_epoch_dual(cloud_model, ground_model, dataloader, device, lr=0.01, gro
                                        ground_batch_metrics['samples/f1'], ground_batch_metrics['total_loss']))
             print(f"Cloud metrics : {cloud_batch_metrics['accuracy']} and loss:{cloud_batch_metrics['total_loss']}")
 
-        if i_batch % 60 == 0:
+        if i_batch % 90 == 0:
             show_4_image_in_batch(image_batch, predicted)
 
     return epoch_metrics, ground_metrics_epoch, cloud_metrics_epoch
@@ -277,8 +270,8 @@ def train_dual(ground_model, cloud_model, train_loader, validation_dataloader, d
      'val_rec_scores', 'val_ham_loss'
     """
 
-    ground_optimizer = ground_optimizer or torch.optim.Adam(ground_model.parameters(), lr=lr)
-    cloud_optimizer = cloud_optimizer or torch.optim.Adam(cloud_model.parameters(), lr=lr)
+    ground_optimizer = ground_optimizer or Adam(ground_model.parameters(), lr=lr)
+    cloud_optimizer = cloud_optimizer or Adam(cloud_model.parameters(), lr=lr)
 
     overall_metrics = {'training': {'micro/precision': [], 'micro/recall': [], 'micro/f1': [], 'macro/precision': [],
                                     'macro/recall': [], 'macro/f1': [], 'samples/precision': [], 'samples/recall': [],
