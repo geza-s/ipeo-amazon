@@ -126,12 +126,6 @@ def validate(model, dataloader, device, loss_fn=nn.BCEWithLogitsLoss()):
             # save metrics
             batch_metrics = calculate_metrics(predicted, ground_truth, loss.cpu().detach().item())
 
-            # accs.append(np.mean(np.array(predicted == ground_truth), axis=0).tolist())
-            # acc_scores.append(accuracy_score(ground_truth.flatten(), predicted.flatten()))
-            # prec_scores.append(precision_score(ground_truth.flatten(), predicted.flatten()))
-            # rec_scores.append(recall_score(ground_truth.flatten(), predicted.flatten()))
-            # ham_loss.append(hamming_loss(ground_truth.flatten(), predicted.flatten()))
-
             # Append metrics to the overall epoch metrics measures
             append_metrics(overall_metrics, batch_metrics)
 
@@ -215,28 +209,26 @@ def train_epoch(model, dataloader, device, lr=0.01, optimizer=None, loss_fn=nn.B
             print("iter:{:3d} training:"
                   "micro f1: {:.3f}"
                   "macro f1: {:.3f} "
-                  "samples f1: {:.3f}".format(i_batch, batch_metrics['micro/f1'], batch_metrics['macro/f1'],
-                                              batch_metrics['samples/f1']))
+                  "samples f1: {:.3f}"
+                  "loss: {:.3f}".format(i_batch, batch_metrics['micro/f1'], batch_metrics['macro/f1'],
+                                              batch_metrics['samples/f1'], batch_metrics['total_loss']))
             print("Predicted:")
             print(predicted[[1, 15, 20, 36, 40], :])
             print("Ground-truth")
             print(ground_truth[[[1, 15, 20, 36, 40]], :])
-            show_4_image_in_batch(image_batch, predicted_labels=predicted)
+            show_4_image_in_batch(image_batch, predicted_labels=predicted, ground_truth=ground_truth)
             continue
 
         if i_batch % 20 == 0:  # print every ... mini-batches the mean loss up to now
             print("iter:{:3d} training:"
                   "micro f1: {:.3f}"
                   "macro f1: {:.3f} "
-                  "samples f1: {:.3f}".format(i_batch, batch_metrics['micro/f1'], batch_metrics['macro/f1'],
-                                              batch_metrics['samples/f1']))
+                  "samples f1: {:.3f}"
+                  "loss: {:.3f}".format(i_batch, batch_metrics['micro/f1'], batch_metrics['macro/f1'],
+                                              batch_metrics['samples/f1'], batch_metrics['total_loss']))
 
-        if i_batch % 60 == 0:
-            print("Predicted:")
-            print(predicted[0:4, :])
-            print("Ground-truth")
-            print(ground_truth[0:4, :])
-            show_4_image_in_batch(image_batch, predicted_labels=predicted)
+        if i_batch % 100 == 0:
+            show_4_image_in_batch(image_batch, predicted_labels=predicted, ground_truth=ground_truth)
 
     return epoch_metrics
 
@@ -275,21 +267,6 @@ def train(model, train_loader, validation_dataloader, device, optimizer=None, lr
         epoch_metrics = train_epoch(model, train_loader, optimizer=optimizer, lr=lr, loss_fn=loss_fn,
                                     device=device)
         val_metrics = validate(model, validation_dataloader, loss_fn=loss_fn, device=device)
-
-        # print(f"Epoch {ep:2}, Train acc={ta:.3f}, Val acc={va:.3f}, Train loss={tl:.3f}, Val loss={vl:.3f}")
-        # res['train_loss'].append(tl)
-        # res['train_acc'].append(ta)
-        # res['train_acc_scores'].append(a_s)
-        # res['train_prec_scores'].append(p_s)
-        # res['train_rec_scores'].append(r_s)
-        # res['train_ham_loss'].append(h_l)
-        #
-        # res['val_loss'].append(vl)
-        # res['val_acc'].append(va)
-        # res['val_acc_scores'].append(va_s)
-        # res['val_prec_scores'].append(vp_s)
-        # res['val_rec_scores'].append(vp_s)
-        # res['val_ham_loss'].append(vh_l)
 
         # Append all the metrics
         append_mean_metrics(overall_metrics['training'], epoch_metrics)
@@ -336,9 +313,7 @@ def batch_prediction(batch, model, device="cuda", criterion=nn.BCEWithLogitsLoss
     return loss.cpu().detach().numpy(), accuracy, predictions
 
 
-
-
-def show_4_image_in_batch(images_batch, predicted_labels):
+def show_4_image_in_batch(images_batch, predicted_labels, ground_truth):
     """
     Shows 4 first images from the batch of the Amazon Dataset
     :param sample_batched: mini-batch of dataloader of Amazon Dataset. Dictionary with 'image', 'labels'
@@ -352,13 +327,17 @@ def show_4_image_in_batch(images_batch, predicted_labels):
 
     # images_batch, labels = sample_batched['image'], sample_batched['labels']
 
-    fig, axs = plt.subplots(1, 4)
+    fig, axs = plt.subplots(1, 4, sharey=True)
     for i in range(4):
         img = F.to_pil_image(images_batch[i])
         axs[i].imshow(img)
+        axs[i].grid(False)
+        axs[i].set_axis_off()
         ids = num_tags[predicted_labels[i, :] == 1.0]
+        ids_truth = num_tags[ground_truth[i, :] == 1]
         names = [tags[ix] for ix in ids]
-        axs[i].set_title(f'#{i}:\n {names}')
+        names_truth = [tags[i] for i in ids_truth]
+        axs[i].set_title(f'#{i}:\n pred: {names} \n truth: {names_truth}', {'fontsize': 12})
     fig.set_figheight(10)
     fig.set_figwidth(12)
     plt.tight_layout()
@@ -429,10 +408,11 @@ def compute_metrics(test_dataloader, model, device, tags):
             all_prediction = predictions
             count = 1
         else:
-            all_predicted = np.vstack((all_predicted,predicted))
-            all_truth = np.vstack((all_truth,ground_truth))
-            all_prediction = np.vstack((all_prediction,predictions))
+            all_predicted = np.vstack((all_predicted, predicted))
+            all_truth = np.vstack((all_truth, ground_truth))
+            all_prediction = np.vstack((all_prediction, predictions))
 
-    report = classification_report(y_true=all_truth, y_pred=all_predicted, output_dict=True, target_names=tags,zero_division=0)
+    report = classification_report(y_true=all_truth, y_pred=all_predicted, output_dict=True, target_names=tags,
+                                   zero_division=0)
     sns.heatmap(pd.DataFrame(report).iloc[:-1, :].T, annot=True, cmap="mako")
     return report, losses, all_prediction
