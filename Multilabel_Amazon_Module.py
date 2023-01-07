@@ -56,12 +56,15 @@ default_transform = T.Compose([
 class MultiLayerCNN(nn.Module):
     def __init__(self):
         super(MultiLayerCNN, self).__init__()
+        self.dropped = nn.Dropout(p=0.1, inplace=False)
         self.conv1 = nn.Conv2d(3, 10,
                                kernel_size=5)  # Input is a 3 plane 256x256 tensor (RGB) -> output 10 planes of 254x254
-        self.pool_max = nn.MaxPool2d(2, 2)  # output of dim-2 x dim-2
+        self.pool_max = nn.MaxPool2d(4)  # output of dim-2 x dim-2
         self.conv2 = nn.Conv2d(10, 20, kernel_size=5)  # input 10 planes 127x127, output 20 planes of 125x125
-        self.pool_avg = nn.AvgPool2d(4, 4)
-        self.fc = nn.Linear(20 * 27 * 27, 17)  # single dense layer for the network
+        self.pool_avg = nn.AvgPool2d(4)
+        self.conv3 = nn.Conv2d(20, 60, kernel_size=5)
+        self.fc1 = nn.Linear(60 * 10 * 10, 100)  # single dense layer for the network
+        self.fc2 = nn.Linear(100, 17)  # single dense layer for the network
         self.batchNorm = nn.BatchNorm2d(3)
         self.loss = nn.BCELoss()
         self.sig = nn.Sigmoid()
@@ -71,13 +74,18 @@ class MultiLayerCNN(nn.Module):
         # print(f"step 1 : {x.shape}")
         x = self.pool_max(nn.functional.relu(self.conv1(x)))
         # print(f"step 2 : {x.shape}")
-        x = self.pool_avg(x)
-        # print(f"step 3 : {x.shape}")
         x = nn.functional.relu(self.conv2(x))
+        # print(f"step 3 : {x.shape}")
+        x = self.pool_avg(x)
         # print(f"step 4 : {x.shape}")
-        x = x.view(-1, 20 * 27 * 27)
+        x = self.conv3(x)
         # print(f"step 5 : {x.shape}")
-        x = self.fc(x)
+        x = x.view(-1, 60 * 10 * 10)
+        # print(f"step 6 : {x.shape}")
+        x = self.fc1(x)
+        # print(f"step 7 : {x.shape}")
+        x = self.fc2(x)
+
         return x
 
 

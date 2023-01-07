@@ -232,6 +232,10 @@ def train_epoch(model, dataloader, device, lr=0.01, optimizer=None, loss_fn=nn.B
                                               batch_metrics['samples/f1']))
 
         if i_batch % 60 == 0:
+            print("Predicted:")
+            print(predicted[0:4, :])
+            print("Ground-truth")
+            print(ground_truth[0:4, :])
             show_4_image_in_batch(image_batch, predicted_labels=predicted)
 
     return epoch_metrics
