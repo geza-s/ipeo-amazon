@@ -1,6 +1,6 @@
 from tqdm import tqdm
 import torch.nn as nn
-from torch import no_grad
+from torch import no_grad, save
 import torchvision.transforms.functional as F
 import numpy as np
 import pandas as pd
@@ -10,6 +10,7 @@ import os
 from torch.optim import Adam
 from sklearn.metrics import accuracy_score, precision_score, recall_score, hamming_loss, f1_score, classification_report
 import seaborn as sns
+from datetime import date
 
 tags = ['haze', 'primary', 'agriculture', 'clear', 'water', 'habitation', 'road', 'cultivation', 'slash_burn',
         'cloudy', 'partly_cloudy', 'conventional_mine', 'bare_ground', 'artisinal_mine', 'blooming',
@@ -211,7 +212,7 @@ def train_epoch(model, dataloader, device, lr=0.01, optimizer=None, loss_fn=nn.B
                   "macro f1: {:.3f} "
                   "samples f1: {:.3f}"
                   "loss: {:.3f}".format(i_batch, batch_metrics['micro/f1'], batch_metrics['macro/f1'],
-                                              batch_metrics['samples/f1'], batch_metrics['total_loss']))
+                                        batch_metrics['samples/f1'], batch_metrics['total_loss']))
             print("Predicted:")
             print(predicted[[1, 15, 20, 36, 40], :])
             print("Ground-truth")
@@ -225,7 +226,7 @@ def train_epoch(model, dataloader, device, lr=0.01, optimizer=None, loss_fn=nn.B
                   "macro f1: {:.3f} "
                   "samples f1: {:.3f}"
                   "loss: {:.3f}".format(i_batch, batch_metrics['micro/f1'], batch_metrics['macro/f1'],
-                                              batch_metrics['samples/f1'], batch_metrics['total_loss']))
+                                        batch_metrics['samples/f1'], batch_metrics['total_loss']))
 
         if i_batch % 100 == 0:
             show_4_image_in_batch(image_batch, predicted_labels=predicted, ground_truth=ground_truth)
@@ -261,12 +262,21 @@ def train(model, train_loader, validation_dataloader, device, optimizer=None, lr
                                       'samples/f1': [], 'hamming_loss': [], 'total_loss': []}
                        }
 
+    min_loss = 1000
+
     for ep in range(epochs):
         print(f'Training epoch {ep} ..... ')
 
         epoch_metrics = train_epoch(model, train_loader, optimizer=optimizer, lr=lr, loss_fn=loss_fn,
                                     device=device)
         val_metrics = validate(model, validation_dataloader, loss_fn=loss_fn, device=device)
+
+        # check if best performance, save if yes
+        if np.mean(epoch_metrics['total_loss']) < min_loss:
+            min_loss = np.mean(epoch_metrics['total_loss'])
+            model_save_name = f"model_multilabel_{epochs}epochs_{date.today()}.pth"
+            save(model.state_dict(), model_save_name)
+            print(f"Saved PyTorch Model State to {model_save_name}")
 
         # Append all the metrics
         append_mean_metrics(overall_metrics['training'], epoch_metrics)
