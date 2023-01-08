@@ -35,32 +35,29 @@ class AdjustSaturation(object):
 class GroundCNN(nn.Module):
     def __init__(self):
         super(GroundCNN, self).__init__()
+        self.conv1 = nn.Conv2d(3, 60,
+                               kernel_size=11, stride=3)  # Input is a 3 plane 256x256 tensor (RBB)
+        self.pool_max = nn.MaxPool2d(3, stride=2)
+        self.conv2 = nn.Conv2d(60, 90, kernel_size=5)
+        self.pool_avg = nn.AvgPool2d(3, stride=2)
+        self.conv3 = nn.Conv2d(90, 260, kernel_size=5)
         self.dropped = nn.Dropout(p=0.1, inplace=False)
-        self.conv1 = nn.Conv2d(3, 10,
-                               kernel_size=5)  # Input is a 3 plane 256x256 tensor (RBB) -> output 10 planes of 254x254
-        self.pool_max = nn.MaxPool2d(3)  # output of dim-2 x dim-2
-        self.conv2 = nn.Conv2d(10, 20, kernel_size=5)  # input 10 planes 127x127, output 20 planes of 125x125
-        self.pool_avg = nn.AvgPool2d(3)
-        self.conv3 = nn.Conv2d(20, 60, kernel_size=5)
-        self.fc1 = nn.Linear(60 * 7 * 7, 1000)  # single dense layer for the network
-        self.fc2 = nn.Linear(1000,14)
+        self.fc1 = nn.Linear(260 * 6 * 6, 80)  # single dense layer for the network
+        self.fc2 = nn.Linear(80, 14)
         self.batchNorm = nn.BatchNorm2d(3)
 
     def forward(self, x):
         x = self.batchNorm(x)
         # print(f"step 1 : {x.shape}")
         x = self.pool_max(nn.functional.relu(self.conv1(x)))
-        x = self.dropped(x)
         # print(f"step 2 : {x.shape}")
         x = nn.functional.relu(self.conv2(x))
         x = self.pool_avg(x)
-        x = self.dropped(x)
         # print(f"step 3 : {x.shape}")
         x = nn.functional.relu(self.conv3(x))
         x = self.pool_max(x)
-        x = self.dropped(x)
         # print(f"step 4 : {x.shape}")
-        x = x.view(-1, 60 * 7 * 7)
+        x = x.view(-1, 260 * 6 * 6)
         # print(f"step 5 : {x.shape}")
         x = self.fc1(x)
         x = self.dropped(x)
@@ -80,8 +77,8 @@ class CloudCNN(nn.Module):
         self.pool_max = nn.MaxPool2d(4)  # output of dim-2 x dim-2
         self.conv2 = nn.Conv2d(10, 30, kernel_size=5)  # input 10 planes 127x127, output 20 planes of 125x125
         self.pool_avg = nn.AvgPool2d(4)
-        self.fc1 = nn.Linear(30*14*14, 100)  # first dense layer for the network
-        self.fc2 = nn.Linear(100, 3)  # second dense layer
+        self.fc1 = nn.Linear(30 * 14 * 14, 80)  # first dense layer for the network
+        self.fc2 = nn.Linear(80, 4)  # second dense layer
         self.smax = nn.Softmax(dim=1)
 
     def forward(self, x):
@@ -93,7 +90,7 @@ class CloudCNN(nn.Module):
         x = self.pool_avg(nn.functional.relu(self.conv2(x)))
         x = self.dropped(x)
         # print(f"step 2 : {x.shape}")
-        x = x.view(-1, 30*14*14)
+        x = x.view(-1, 30 * 14 * 14)
         # print(f"step 3 : {x.shape}")
         x = self.fc1(x)
         # print(f"step 4 : {x.shape}")
@@ -118,16 +115,21 @@ class AmazonSpaceDual(Dataset):
         self.labels = pd.read_csv(csv_file)
 
         # Dictionaries listing all the tags
-        self.tags_cloud = {'clear': 0, 'partly_cloudy': 1, 'cloudy': 2}
-        self.tags_ground = {'haze': 0, 'primary': 1, 'agriculture': 2, 'water': 3, 'habitation': 4, 'road': 5, 'cultivation': 6, 'slash_burn': 7, 'conventional_mine': 8, 'bare_ground': 9, 'artisinal_mine': 10, 'blooming': 11, 'selective_logging': 12, 'blow_down': 13}
+        self.tags_cloud = {'clear': 0, 'partly_cloudy': 1, 'cloudy': 2, 'none_clouds': 3}
+        self.tags_ground = {'haze': 0, 'primary': 1, 'agriculture': 2, 'water': 3, 'habitation': 4, 'road': 5,
+                            'cultivation': 6, 'slash_burn': 7, 'conventional_mine': 8, 'bare_ground': 9,
+                            'artisinal_mine': 10, 'blooming': 11, 'selective_logging': 12, 'blow_down': 13}
 
         # Creation of binary tag presence for optimisation of model
         for tag in self.tags_ground.keys():
             a = [(tag in i.split()) for i in self.labels['tags']]
             self.labels[tag] = np.zeros(len(a), dtype=int) + a
-        for tag in self.tags_cloud.keys():
+        for tag in ['clear', 'partly_cloudy', 'cloudy']:
             a = [(tag in i.split()) for i in self.labels['tags']]
             self.labels[tag] = np.zeros(len(a), dtype=int) + a
+        # We input a 4th label in model to be able to run classification
+        a_none = [(v_clouds == 0) for v_clouds in np.sum(self.labels[['clear', 'partly_cloudy', 'cloudy']], axis=1)]
+        self.labels['none_clouds'] = np.zeros(len(a_none), dtype=int) + a_none
 
         # Other information
         self.root_dir = root_dir
@@ -149,7 +151,6 @@ class AmazonSpaceDual(Dataset):
         # Applying given transforms
         if self.transform:
             image = self.transform(image)
-
 
         # Getting the target values
         cloud_target = self.labels.loc[idx, self.tags_cloud.keys()].to_numpy(dtype=np.float32)
