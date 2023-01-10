@@ -38,6 +38,77 @@ def calculate_metrics(pred, target, batch_loss):
                }
     return results
 
+def compute_metrics_multi(test_dataloader, model, device, tags, target):
+    """
+    Predict the values from model for test_dataloader given. Function for the testing of the model.
+    :param test_dataloader:
+    :param model: model of interest
+    :param device: on which device run the thing
+    :param tags: name of the classes
+    :return: report, losses
+    """
+
+    # store stats
+    losses = []
+    count = 0
+
+    for batch in tqdm(test_dataloader):
+        # TODO run prediction_step
+        loss, predicted, ground_truth, predictions = batch_prediction_multi(batch, model, device,nn.BCEWithLogitsLoss(),target)
+
+        # append to stats
+        losses.append(loss)
+
+        # accuracies.append(accuracy)
+        if count == 0:
+            all_predicted = predicted
+            all_truth = ground_truth
+            all_prediction = predictions
+            count = 1
+        else:
+            all_predicted = np.vstack((all_predicted, predicted))
+            all_truth = np.vstack((all_truth, ground_truth))
+            all_prediction = np.vstack((all_prediction, predictions))
+
+    report = classification_report(y_true=all_truth, y_pred=all_predicted, output_dict=True, target_names=tags,
+                                   zero_division=0)
+    sns.heatmap(pd.DataFrame(report).iloc[:-1, :].T, annot=True, cmap="mako")
+    return report, losses, all_prediction
+
+def batch_prediction_multi(batch, model, device="cuda", criterion=nn.BCEWithLogitsLoss(), target="ground_target"):
+    """
+    Predict the values from model for batch given. Function for the testing of the model.
+    :param criterion:
+    :param batch: batch composed of 'image' and 'labels'
+    :param model: model of interest
+    :param device: on which device run the thing
+    :return: loss,accuracy
+    """
+    model.eval()
+    sig = nn.Sigmoid()
+
+    # Retrieve image and label from the batch
+    x = batch['image']
+    y = batch[target]
+
+    # move model and code to GPU
+    model = model.to(device)
+    x = x.to(device)
+    y = y.to(device)
+    
+    # Forward pass
+    y_hat = model(x)
+    
+    # Loss calculation (only for statistics)
+    loss = criterion(y_hat, y)
+
+    # Calculate accuracy for statistics
+    predicted = (sig(y_hat) > 0.5).float().cpu().detach().numpy()
+    ground_truth = y.cpu().detach().numpy()
+
+    predictions = np.array((predicted == ground_truth), dtype=np.float64).mean(axis=0)
+
+    return loss.cpu().detach().numpy(), predicted, ground_truth, predictions
 
 def append_metrics(all_metrics_dict, batch_metrics):
     """
