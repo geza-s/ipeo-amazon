@@ -147,7 +147,7 @@ def train_epoch(model, dataloader, device, lr=0.01, optimizer=None, loss_fn=nn.B
     sig = nn.Sigmoid()
     optimizer = optimizer or Adam(model.parameters(), lr=lr)
     model.train()
-    # accs, acc_scores, prec_scores, rec_scores, tot_loss, ham_loss = [], [], [], [], [], []
+
     epoch_metrics = {'micro/precision': [], 'micro/recall': [], 'micro/f1': [], 'macro/precision': [],
                      'macro/recall': [], 'macro/f1': [], 'samples/precision': [], 'samples/recall': [],
                      'samples/f1': [], 'hamming_loss': [], 'total_loss': []}
@@ -174,8 +174,6 @@ def train_epoch(model, dataloader, device, lr=0.01, optimizer=None, loss_fn=nn.B
         optimizer.step()
 
         # Metrics
-        # All the losses for this epoch
-        # tot_loss.append(loss.cpu().detach().item())
         # Prediction of this batch and appending to all accuarcies of this epoch
         predicted = (sig(out) > 0.5).float().cpu().detach().numpy()
         ground_truth = targets.cpu().detach().numpy()
@@ -183,25 +181,8 @@ def train_epoch(model, dataloader, device, lr=0.01, optimizer=None, loss_fn=nn.B
         # save all the metrics
         batch_metrics = calculate_metrics(predicted, ground_truth, loss.cpu().detach().item())
 
-        # accs.append(np.mean(np.array(predicted == ground_truth), axis=0).tolist())
-        # acc_scores.append(accuracy_score(ground_truth.flatten(), predicted.flatten()))
-        # prec_scores.append(precision_score(ground_truth.flatten(), predicted.flatten()))
-        # rec_scores.append(recall_score(ground_truth.flatten(), predicted.flatten()))
-        # ham_loss.append(hamming_loss(ground_truth.flatten(), predicted.flatten()))
-
         # Append metrics to the overall epoch metrics measures
         append_metrics(epoch_metrics, batch_metrics)
-
-        # if i_batch == 0:
-        #     print(image_batch.size())
-        #     print(np.shape(predicted), np.shape(ground_truth))
-        #     print(
-        #         f"Predicted : {predicted}, calculated accuracy score: {np.mean(acc_scores)}, prediction score : {np.mean(prec_scores)}, recall score: {np.mean(rec_scores)}")
-        #
-        # if i_batch % 20 == 0:  # print every ... mini-batches the mean loss up to now
-        #     print(
-        #         f"Loss : {np.mean(tot_loss)}, calculated accuracy score: {np.mean(acc_scores)}, prediction score : {np.mean(prec_scores)}, recall score: {np.mean(rec_scores)}")
-        # return tot_loss, accs, acc_scores, prec_scores, rec_scores, ham_loss
 
         if i_batch == 0:
             print(f'image batch size: {image_batch.size()}')
@@ -214,13 +195,13 @@ def train_epoch(model, dataloader, device, lr=0.01, optimizer=None, loss_fn=nn.B
                   "loss: {:.3f}".format(i_batch, batch_metrics['micro/f1'], batch_metrics['macro/f1'],
                                         batch_metrics['samples/f1'], batch_metrics['total_loss']))
             print("Predicted:")
-            print(predicted[[1, 15, 20, 36, 40], :])
+            print(predicted[range(4), :])
             print("Ground-truth")
-            print(ground_truth[[[1, 15, 20, 36, 40]], :])
+            print(ground_truth[range(4), :])
             show_4_image_in_batch(image_batch, predicted_labels=predicted, ground_truth=ground_truth)
             continue
 
-        if i_batch % 20 == 0:  # print every ... mini-batches the mean loss up to now
+        if i_batch % 100 == 0:  # print every ... mini-batches the mean loss up to now
             print("iter:{:3d} training:"
                   "micro f1: {:.3f}"
                   "macro f1: {:.3f} "
@@ -228,7 +209,7 @@ def train_epoch(model, dataloader, device, lr=0.01, optimizer=None, loss_fn=nn.B
                   "loss: {:.3f}".format(i_batch, batch_metrics['micro/f1'], batch_metrics['macro/f1'],
                                         batch_metrics['samples/f1'], batch_metrics['total_loss']))
 
-        if i_batch % 100 == 0:
+        if i_batch % 500 == 0:
             show_4_image_in_batch(image_batch, predicted_labels=predicted, ground_truth=ground_truth)
 
     return epoch_metrics
@@ -272,9 +253,9 @@ def train(model, train_loader, validation_dataloader, device, optimizer=None, lr
         val_metrics = validate(model, validation_dataloader, loss_fn=loss_fn, device=device)
 
         # check if best performance, save if yes
-        if np.mean(epoch_metrics['total_loss']) < min_loss:
-            min_loss = np.mean(epoch_metrics['total_loss'])
-            model_save_name = f"model_multilabel_{epochs}epochs_{date.today()}.pth"
+        if np.mean(val_metrics['total_loss']) < min_loss:
+            min_loss = np.mean(val_metrics['total_loss'])
+            model_save_name = f"model_multilabel_{epochs}epochs_{str(lr).replace('.','_')}lr_{date.today()}.pth"
             save(model.state_dict(), model_save_name)
             print(f"Saved PyTorch Model State to {model_save_name}")
 
