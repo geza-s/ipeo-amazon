@@ -38,7 +38,8 @@ def calculate_metrics(pred, target, batch_loss):
                }
     return results
 
-def compute_metrics_multi(test_dataloader, model, device, tags, target):
+def testing_multi(test_dataloader, model_ground, model_cloud, device = "cpu", 
+                  criterion_gr=nn.BCEWithLogitsLoss(), criterion_cl =nn.BCELoss()):
     """
     Predict the values from model for test_dataloader given. Function for the testing of the model.
     :param test_dataloader:
@@ -47,35 +48,51 @@ def compute_metrics_multi(test_dataloader, model, device, tags, target):
     :param tags: name of the classes
     :return: report, losses
     """
-
+    
+    tags_cl = test_dataloader.dataset.tags_cloud.keys()
+    tags_gr = test_dataloader.dataset.tags_ground.keys()
+    
     # store stats
     losses = []
     count = 0
 
     for batch in tqdm(test_dataloader):
-        # TODO run prediction_step
-        loss, predicted, ground_truth, predictions = batch_prediction_multi(batch, model, device,nn.BCEWithLogitsLoss(),target)
-
-        # append to stats
-        losses.append(loss)
+        # run prediction_step
+        results = batch_prediction_multi(batch, model_ground, model_cloud, device="cpu",
+                                         criterion_gr=nn.BCEWithLogitsLoss(), criterion_cl=nn.BCELoss())
 
         # accuracies.append(accuracy)
         if count == 0:
-            all_predicted = predicted
-            all_truth = ground_truth
-            all_prediction = predictions
+            testing_results = {'ground' : {'target' : results['ground']['target'],
+                                           'predicted' : results['ground']['predicted'],
+                                           'loss' : results['ground']['loss']},
+                               'cloud' : {'target' : results['cloud']['target'],
+                                          'predicted' : results['cloud']['predicted'],
+                                          'loss' : results['cloud']['loss']},
+                               'total' : {'target' : results['total']['target'],
+                                          'predicted' : results['total']['predicted'],
+                                          'loss' : results['total']['loss']}
+                              }
             count = 1
+            
         else:
-            all_predicted = np.vstack((all_predicted, predicted))
-            all_truth = np.vstack((all_truth, ground_truth))
-            all_prediction = np.vstack((all_prediction, predictions))
+            testing_results = {'ground' : {'target' : np.vstack((testing_results['ground']['target'],results['ground']['target'])),
+                               'predicted' : np.vstack((testing_results['ground']['predicted'],results['ground']['predicted'])),
+                               'loss' : np.vstack((testing_results['ground']['loss'],results['ground']['loss']))},
+                   'cloud' : {'target' : np.vstack((testing_results['cloud']['target'],results['cloud']['target'])),
+                              'predicted' : np.vstack((testing_results['cloud']['predicted'],results['cloud']['predicted'])),
+                              'loss' : np.vstack((testing_results['cloud']['loss'],results['cloud']['loss']))},
+                   'total' : {'target' : np.vstack((testing_results['total']['target'],results['total']['target'])),
+                              'predicted' : np.vstack((testing_results['total']['predicted'],results['total']['predicted'])),
+                              'loss' : np.vstack((testing_results['total']['loss'],results['total']['loss']))}
+                              }
+            
+    return testing_results
 
-    report = classification_report(y_true=all_truth, y_pred=all_predicted, output_dict=True, target_names=tags,
-                                   zero_division=0)
-    sns.heatmap(pd.DataFrame(report).iloc[:-1, :].T, annot=True, cmap="mako")
-    return report, losses, all_prediction
 
-def batch_prediction_multi(batch, model, device="cuda", criterion=nn.BCEWithLogitsLoss(), target="ground_target"):
+
+def batch_prediction_multi(batch, model_ground, model_cloud, device="cpu", 
+                           criterion_gr=nn.BCEWithLogitsLoss(), criterion_cl =nn.BCELoss()):
     """
     Predict the values from model for batch given. Function for the testing of the model.
     :param criterion:
@@ -84,31 +101,49 @@ def batch_prediction_multi(batch, model, device="cuda", criterion=nn.BCEWithLogi
     :param device: on which device run the thing
     :return: loss,accuracy
     """
-    model.eval()
+    model_ground.eval()
+    model_cloud.eval()
     sig = nn.Sigmoid()
 
     # Retrieve image and label from the batch
-    x = batch['image']
-    y = batch[target]
-
-    # move model and code to GPU
-    model = model.to(device)
-    x = x.to(device)
-    y = y.to(device)
+    x = batch['image'].to(device)
+    y_gr = batch['ground_target'].to(device)
+    y_cl = batch['cloud_target'].to(device)
+    y_glob = np.hstack((y_gr, y_cl))
     
     # Forward pass
-    y_hat = model(x)
+    y_hat_gr = model_ground(x)
+    y_hat_cl = model_cloud(x)
     
     # Loss calculation (only for statistics)
-    loss = criterion(y_hat, y)
+    loss_gr = criterion_gr(y_hat_gr, y_gr).cpu().detach().numpy()
+    loss_cl = criterion_cl(y_hat_cl, y_cl).cpu().detach().numpy()
+    
+    loss_glob = loss_gr + loss_cl
 
     # Calculate accuracy for statistics
-    predicted = (sig(y_hat) > 0.5).float().cpu().detach().numpy()
-    ground_truth = y.cpu().detach().numpy()
+    predicted_gr = (sig(y_hat_gr) > 0.5).float().cpu().detach().numpy()
+    ground_truth = y_gr.cpu().detach().numpy()
+    accuracy_gr = np.array((predicted_gr == ground_truth), dtype=np.float64).mean(axis=0)
+    
+    predicted_cl = y_hat_cl.cpu().detach().numpy()
+    predicted_cl = (predicted_cl == predicted_cl.max(axis=1, keepdims = True))
+    cloud_truth = y_cl.cpu().detach().numpy()
+    accuracy_cl = np.array((predicted_cl == cloud_truth), dtype=np.float64).mean(axis=0)
 
-    predictions = np.array((predicted == ground_truth), dtype=np.float64).mean(axis=0)
+    results = {'ground' : {'target' : ground_truth, 
+                           'predicted' : predicted_gr, 
+                           'loss' : loss_gr},
+              'cloud' : {'target' : cloud_truth, 
+                         'predicted' : predicted_cl, 
+                         'loss' : loss_cl},
+              'total' : {'target' : np.hstack((ground_truth, cloud_truth)),
+                        'predicted' : np.hstack((predicted_gr, predicted_cl)),
+                        'loss' : loss_glob}
+              }
+    
 
-    return loss.cpu().detach().numpy(), predicted, ground_truth, predictions
+    return results
 
 def append_metrics(all_metrics_dict, batch_metrics):
     """
