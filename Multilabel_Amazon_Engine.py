@@ -201,7 +201,7 @@ def train_epoch(model, dataloader, device, lr=0.01, optimizer=None, loss_fn=nn.B
             show_4_image_in_batch(image_batch, predicted_labels=predicted, ground_truth=ground_truth)
             continue
 
-        if i_batch % 100 == 0:  # print every ... mini-batches the mean loss up to now
+        if i_batch % 500 == 0:  # print every ... mini-batches the mean loss up to now
             print("iter:{:3d} training:"
                   "micro f1: {:.3f}"
                   "macro f1: {:.3f} "
@@ -209,7 +209,7 @@ def train_epoch(model, dataloader, device, lr=0.01, optimizer=None, loss_fn=nn.B
                   "loss: {:.3f}".format(i_batch, batch_metrics['micro/f1'], batch_metrics['macro/f1'],
                                         batch_metrics['samples/f1'], batch_metrics['total_loss']))
 
-        if i_batch % 500 == 0:
+        if i_batch % 1000 == 0:
             show_4_image_in_batch(image_batch, predicted_labels=predicted, ground_truth=ground_truth)
 
     return epoch_metrics
