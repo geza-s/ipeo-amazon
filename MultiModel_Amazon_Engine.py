@@ -303,12 +303,12 @@ def testing_multi(test_dataloader, model_ground, model_cloud, device="cpu",
     tags_gr = test_dataloader.dataset.tags_ground.keys()
 
     # store stats
-    losses = []
     count = 0
 
     for batch in tqdm(test_dataloader):
+
         # run prediction_step
-        results = batch_prediction_multi(batch, model_ground, model_cloud, device="cpu",
+        results = batch_prediction_multi(batch, model_ground, model_cloud, device=device,
                                          criterion_gr=nn.BCEWithLogitsLoss(), criterion_cl=nn.BCELoss())
 
         # accuracies.append(accuracy)
