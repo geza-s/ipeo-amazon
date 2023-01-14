@@ -398,61 +398,6 @@ def batch_prediction_multi(batch, model_ground, model_cloud, device="cpu",
 
     return results
 
-def batch_prediction_dual(batch, ground_model, cloud_model, device, ground_criterion=nn.BCEWithLogitsLoss(),
-                          cloud_criterion=nn.BCELoss()):
-    """
-    Predict the values from model for batch given. Function for the testing of the model.
-    :param batch: batch composed of 'image' and 'labels'
-    :param ground_model: model trained for ground detection
-    :param cloud_model: model trained for cloud detection
-    :param device: on which device run the thing
-    :param ground_criterion: for ground loss value
-    :param cloud_criterion: for cloud loss value
-    :return: loss,accuracy
-    """
-    ground_model.eval()
-    cloud_model.eval()
-
-    sig = nn.Sigmoid()
-
-    # Retrieve image and label from the batch and
-    x = batch['image'].to(device)
-    y_ground = batch['ground_target'].to(device)
-    y_cloud = batch['cloud_target'].to(device)
-
-    # move model and code to GPU
-    ground_model = ground_model.to(device)
-    cloud_model = cloud_model.to(device)
-
-    # Forward pass
-    y_hat_ground = ground_model(x)
-    y_hat_cloud = cloud_model(x)
-
-    # Loss calculation (only for statistics)
-    ground_loss = ground_criterion(y_hat_ground, y_ground)
-    cloud_loss = cloud_criterion(y_hat_cloud, y_cloud)
-
-    loss = ground_loss + cloud_loss  ## HERE ALSO TO MODIFY ACCORDING TO LOSS
-
-    # THe predictions
-    ground_predicted = (sig(y_hat_ground) > 0.5).float().cpu().detach().numpy()
-    _, cloud_predicted = torch_max(y_hat_cloud, 1)
-
-    predicted = np.hstack((ground_predicted, cloud_predicted.cpu().detach().numpy))
-
-    # The targeted values
-    ground_target = y_ground.cpu().detach().numpy()
-    cloud_target = y_cloud.cpu().detach().numpy()
-    ground_truth = np.hstack((ground_target, cloud_target))
-
-    # The according metrics
-    predictions = np.array((predicted == ground_truth), dtype=np.float64).mean(axis=0)
-    # accuracy = (np.array((predicted == ground_truth)).astype(np.float64).mean())
-
-    bach_metrics = calculate_metrics(predicted, ground_truth, loss.cpu().detach().numpy())
-
-    return bach_metrics, predictions
-
 
 def show_4_image_in_batch_solo(model_type, images_batch, predicted_labels, ground_truth):
     """

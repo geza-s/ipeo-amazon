@@ -8,8 +8,8 @@ from skimage.io import imread
 import matplotlib.pyplot as plt
 import os
 from torch.optim import Adam
-from sklearn.metrics import accuracy_score, precision_score, recall_score, hamming_loss, f1_score, classification_report
-import seaborn as sns
+from sklearn.metrics import hamming_loss, f1_score, classification_report, precision_recall_fscore_support
+
 from datetime import date
 
 tags = ['haze', 'primary', 'agriculture', 'clear', 'water', 'habitation', 'road', 'cultivation', 'slash_burn',
@@ -330,6 +330,7 @@ def show_4_image_in_batch(images_batch, predicted_labels, ground_truth):
     fig.set_figheight(10)
     fig.set_figwidth(12)
     plt.tight_layout()
+    plt.grid(False)
     plt.show()
 
 
@@ -364,12 +365,12 @@ def batch_prediction_s(batch, model, device="cuda", criterion=nn.BCEWithLogitsLo
     predicted = (sig(y_hat) > 0.5).float().cpu().detach().numpy()
     ground_truth = y.cpu().detach().numpy()
 
-    predictions = np.array((predicted == ground_truth), dtype=np.float64).mean(axis=0)
+    mean_class_predictions = np.array((predicted == ground_truth), dtype=np.float64).mean(axis=0)
 
-    return loss.cpu().detach().numpy(), predicted, ground_truth, predictions
+    return loss.cpu().detach().numpy(), predicted, ground_truth, mean_class_predictions
 
 
-def compute_metrics(test_dataloader, model, device, tags):
+def testing_model(test_dataloader, model, device, tags):
     """
     Predict the values from model for test_dataloader given. Function for the testing of the model.
     :param test_dataloader:
@@ -385,7 +386,7 @@ def compute_metrics(test_dataloader, model, device, tags):
 
     for batch in tqdm(test_dataloader):
         # TODO run prediction_step
-        loss, predicted, ground_truth, predictions = batch_prediction_s(batch, model, device=device)
+        loss, predicted, ground_truth, class_predictions = batch_prediction_s(batch, model, device=device)
 
         # append to stats
         losses.append(loss)
@@ -394,14 +395,15 @@ def compute_metrics(test_dataloader, model, device, tags):
         if count == 0:
             all_predicted = predicted
             all_truth = ground_truth
-            all_prediction = predictions
+            all_class_predictions = class_predictions
             count = 1
         else:
             all_predicted = np.vstack((all_predicted, predicted))
             all_truth = np.vstack((all_truth, ground_truth))
-            all_prediction = np.vstack((all_prediction, predictions))
+            all_class_predictions = np.vstack((all_class_predictions, class_predictions))
 
-    report = classification_report(y_true=all_truth, y_pred=all_predicted, output_dict=True, target_names=tags,
-                                   zero_division=0)
-    sns.heatmap(pd.DataFrame(report).iloc[:-1, :].T, annot=True, cmap="mako")
-    return report, losses, all_prediction
+    #report = classification_report(y_true=all_truth, y_pred=all_predicted, output_dict=True, target_names=tags,
+    #                               zero_division=0)
+    #sns.heatmap(pd.DataFrame(report).iloc[:-1, :].T, annot=True, cmap="mako")
+    #return report, losses, all_prediction
+    return {'predicted': all_predicted, 'ground_truth': all_truth, "class_predictions" : all_class_predictions }
