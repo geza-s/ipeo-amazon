@@ -45,15 +45,13 @@ def calculate_metrics(pred, target, batch_loss=None):
     :return: dictionary with keys: "X/precision", "X/recall", "X/f1" with X='micro', 'macro' or 'samples',
     and also 'hamming_loss'
     """
-    results = {'micro/precision': precision_score(y_true=target, y_pred=pred, average='micro', zero_division=0),
-               'micro/recall': recall_score(y_true=target, y_pred=pred, average='micro', zero_division=0),
-               'micro/f1': f1_score(y_true=target, y_pred=pred, average='micro', zero_division=0),
-               'macro/precision': precision_score(y_true=target, y_pred=pred, average='macro', zero_division=0),
-               'macro/recall': recall_score(y_true=target, y_pred=pred, average='macro', zero_division=0),
-               'macro/f1': f1_score(y_true=target, y_pred=pred, average='macro', zero_division=0),
-               'samples/precision': precision_score(y_true=target, y_pred=pred, average='samples', zero_division=0),
-               'samples/recall': recall_score(y_true=target, y_pred=pred, average='samples', zero_division=0),
-               'samples/f1': f1_score(y_true=target, y_pred=pred, average='samples', zero_division=0),
+    p_micro = precision_recall_fscore_support(y_true=target, y_pred=pred, average='micro', zero_division=0)
+    p_macro = precision_recall_fscore_support(y_true=target, y_pred=pred, average='macro', zero_division=0)
+    p_samples = precision_recall_fscore_support(y_true=target, y_pred=pred, average='samples', zero_division=0)
+
+    results = {'micro/precision': p_micro[0], 'micro/recall': p_micro[1], 'micro/f1': p_micro[2],
+               'macro/precision': p_macro[0], 'macro/recall': p_macro[1], 'macro/f1': p_macro[2],
+               'samples/precision': p_samples[0], 'samples/recall': p_samples[1], 'samples/f1': p_samples[2],
                'hamming_loss': hamming_loss(y_true=target, y_pred=pred),
                'total_loss': batch_loss
                }
