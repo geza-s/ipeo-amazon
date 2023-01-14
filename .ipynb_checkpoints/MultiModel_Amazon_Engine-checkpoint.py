@@ -311,7 +311,7 @@ def train_epoch_solo(model_type, model, dataloader, device, lr=0.01, optimizer=N
                                            ground_truth=target.cpu().detach().numpy())
                 continue
 
-            if i_batch % 30 == 0:  # print every ... mini-batches the mean loss up to now
+            if i_batch % 500 == 0:  # print every ... mini-batches the mean loss up to now
                 print("Ground metrics:"
                       "micro f1: {:.3f}"
                       "macro f1: {:.3f} "
@@ -335,13 +335,13 @@ def train_epoch_solo(model_type, model, dataloader, device, lr=0.01, optimizer=N
                                            ground_truth=target.cpu().detach().numpy())
                 continue
 
-            if i_batch % 30 == 0:  # print every ... mini-batches the mean loss up to now
+            if i_batch % 500 == 0:  # print every ... mini-batches the mean loss up to now
                 print(f"Cloud metrics : acc: {batch_metrics['accuracy']} and loss:{batch_metrics['total_loss']}")
         else:
             print(f"Couldn't train model type {model_type}")
             return False
 
-        if i_batch % 100 == 0:
+        if i_batch % 1000 == 0:
             show_4_image_in_batch_solo(model_type, image_batch, predicted, ground_truth=target.cpu().detach().numpy())
 
         # Append metrics to the overall epoch metrics measures
