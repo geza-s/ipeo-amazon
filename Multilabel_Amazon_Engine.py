@@ -7,7 +7,7 @@ import pandas as pd
 from skimage.io import imread
 import matplotlib.pyplot as plt
 import os
-from torch.optim import Adam
+from torch.optim import Adam, SGD
 from sklearn.metrics import hamming_loss, f1_score, classification_report, precision_recall_fscore_support
 
 from datetime import date
@@ -18,14 +18,19 @@ tags = ['haze', 'primary', 'agriculture', 'clear', 'water', 'habitation', 'road'
 
 
 def checking_folder(data_folder='../IPEO_Planet_project'):
+    """
+    Function that checks if the data folder has no invalid file.
+    :param data_folder: folder with all the images to check
+    :return: corrupted files list
+    """
     labels_dt = pd.read_csv(f'{data_folder}/train_labels.csv', dtype=str)
     corrupted_files = []
     i = 0
     for img_id in tqdm(labels_dt['image_name']):
-        # if i % 1000 == 0:
-        #    print(f"image {i}")
+
         img_name = os.path.join(f'{data_folder}/train-jpg', f'{img_id}.jpg')
         img = imread(img_name)
+        # if image couldn't be read, note as corrupt
         if img is None:
             print(f'{img_id} is corrupt...')
             corrupted_files.append(img_id)
@@ -74,7 +79,7 @@ def append_metrics(all_metrics_dict, batch_metrics):
 
 def append_mean_metrics(all_metrics_dict, batch_metrics):
     """
-    Appends the mean value for each metric
+    Appends the mean value for each metric.
     :param all_metrics_dict:
     :param batch_metrics:
     :return:
@@ -134,16 +139,19 @@ def validate(model, dataloader, device, loss_fn=nn.BCEWithLogitsLoss()):
 
 def train_epoch(model, dataloader, device, lr=0.01, optimizer=None, loss_fn=nn.BCEWithLogitsLoss()):
     """
+     Training of a model over 1 epochs
     :param model: model used for prediction
     :param dataloader: dataloader over the amazon space dataset
     :param device: device on which train, 'cuda' or 'cpu'
     :param lr: learning rate, here default = 0.01
-    :param optimizer: Here if None given then using Adam
+    :param optimizer: Here if None given then using SGD with a momentum of 0.9
     :param loss_fn: Loss function default is BCEWithLogitsLoss (sigmoid + cross-entropy)
-    :return:
+    :return: epoch's metrics as a dictionary with {'micro/precision', 'micro/recall', 'micro/f1', 'macro/precision',
+    'macro/recall', 'macro/f1', 'samples/precision', 'samples/recall', 'samples/f1', 'hamming_loss', 'total_loss'}
     """
     sig = nn.Sigmoid()
-    optimizer = optimizer or Adam(model.parameters(), lr=lr)
+    optimizer = optimizer or SGD(model.parameters(), lr=lr, momentum=0.9)
+
     model.train()
 
     epoch_metrics = {'micro/precision': [], 'micro/recall': [], 'micro/f1': [], 'macro/precision': [],
@@ -183,27 +191,20 @@ def train_epoch(model, dataloader, device, lr=0.01, optimizer=None, loss_fn=nn.B
         append_metrics(epoch_metrics, batch_metrics)
 
         if i_batch == 0:
-            print(f'image batch size: {image_batch.size()}')
-            print(f' Predicted shape: {np.shape(predicted)} and ground truth shape {np.shape(ground_truth)}')
-            print(batch_metrics)
-            print("iter:{:3d} training:"
-                  "micro f1: {:.3f}"
-                  "macro f1: {:.3f} "
-                  "samples f1: {:.3f}"
+            print("iter:{:3d} training: "
+                  "micro f1: {:.3f}, "
+                  "macro f1: {:.3f}, "
+                  "samples f1: {:.3f}, "
                   "loss: {:.3f}".format(i_batch, batch_metrics['micro/f1'], batch_metrics['macro/f1'],
                                         batch_metrics['samples/f1'], batch_metrics['total_loss']))
-            print("Predicted:")
-            print(predicted[range(4), :])
-            print("Ground-truth")
-            print(ground_truth[range(4), :])
             show_4_image_in_batch(image_batch, predicted_labels=predicted, ground_truth=ground_truth)
             continue
 
-        if i_batch % 500 == 0:  # print every ... mini-batches the mean loss up to now
-            print("iter:{:3d} training:"
-                  "micro f1: {:.3f}"
-                  "macro f1: {:.3f} "
-                  "samples f1: {:.3f}"
+        if i_batch % 500 == 0:  # print every 500 batches the metrics
+            print("iter:{:3d} training: "
+                  "micro f1: {:.3f}, "
+                  "macro f1: {:.3f}, "
+                  "samples f1: {:.3f}, "
                   "loss: {:.3f}".format(i_batch, batch_metrics['micro/f1'], batch_metrics['macro/f1'],
                                         batch_metrics['samples/f1'], batch_metrics['total_loss']))
 
@@ -216,22 +217,20 @@ def train_epoch(model, dataloader, device, lr=0.01, optimizer=None, loss_fn=nn.B
 def train(model, train_loader, validation_dataloader, device, optimizer=None, lr=0.01, epochs=2,
           loss_fn=nn.BCEWithLogitsLoss()):
     """
+    Main function to train the model.
     :param model: model to train
     :param train_loader: train dataloader
-    :param test_loader: testing dataloader
-    :param optimizer: optimizer per default is Adam
+    :param validation_dataloader: validation dataloader
+    :param device : device to train on
+    :param optimizer: optimizer per default SGD with momentum of 0.9
     :param lr: default 0.01
     :param epochs: default 2
     :param loss_fn: default BCEWithLogitsLoss (sigmoid + Cross Entropy)
-    :return: results as a dictionary with 'train_loss', 'train_acc', 'train_acc_scores', 'train_prec_scores',
-     'train_rec_scores', 'train_ham_loss', 'val_loss', 'val_acc', 'val_acc_scores', 'val_prec_scores',
-     'val_rec_scores', 'val_ham_loss'
+    :return: Results as a 2 level dictionary: 1level : "training" or "validating", 2nd level: 'micro/precision',
+     'micro/recall', 'micro/f1', 'macro/precision','macro/recall', 'macro/f1', 'samples/precision', 'samples/recall',
+     'samples/f1', 'hamming_loss', 'total_loss'
     """
-    optimizer = optimizer or Adam(model.parameters(), lr=lr)
-    # res = {'train_loss': [], 'train_acc': [], 'train_acc_scores': [], 'train_prec_scores': [], 'train_rec_scores': [],
-    #       'train_ham_loss': [],
-    #       'val_loss': [], 'val_acc': [], 'val_acc_scores': [], 'val_prec_scores': [], 'val_rec_scores': [],
-    #       'val_ham_loss': []}
+    optimizer = optimizer or SGD(model.parameters(), lr=lr, momentum=0.9)
 
     overall_metrics = {'training': {'micro/precision': [], 'micro/recall': [], 'micro/f1': [], 'macro/precision': [],
                                     'macro/recall': [], 'macro/f1': [], 'samples/precision': [], 'samples/recall': [],
@@ -241,7 +240,7 @@ def train(model, train_loader, validation_dataloader, device, optimizer=None, lr
                                       'samples/f1': [], 'hamming_loss': [], 'total_loss': []}
                        }
 
-    min_loss = 1000
+    min_loss = 1000  # initialize as big loss for min loss saving
 
     for ep in range(epochs):
         print(f'Training epoch {ep} ..... ')
@@ -264,50 +263,13 @@ def train(model, train_loader, validation_dataloader, device, optimizer=None, lr
     print(".... ENDED TRAINING THE MODEL !")
     return overall_metrics
 
-
-def batch_prediction(batch, model, device="cuda", criterion=nn.BCEWithLogitsLoss()):
-    """
-    Predict the values from model for batch given. Function for the testing of the model.
-    :param criterion:
-    :param batch: batch composed of 'image' and 'labels'
-    :param model: model of interest
-    :param device: on which device run the thing
-    :return: loss,accuracy
-    """
-    model.eval()
-    sig = nn.Sigmoid()
-
-    # Retrieve image and label from the batch
-    x = batch['image']
-    y = batch['labels']
-
-    # move model and code to GPU
-    model = model.to(device)
-    x = x.to(device)
-    y = y.to(device)
-
-    # Forward pass
-    y_hat = model(x)
-
-    # Loss calculation (only for statistics)
-    loss = criterion(y_hat, y)
-
-    # Calculate accuracy for statistics
-    predicted = (sig(y_hat) > 0.5).float().cpu().detach().numpy()
-    ground_truth = y.cpu().detach().numpy()
-
-    predictions = np.array((predicted == ground_truth), dtype=np.float64).mean(axis=0)
-    accuracy = (np.array((predicted == ground_truth)).astype(np.float64).mean())
-
-    return loss.cpu().detach().numpy(), accuracy, predictions
-
-
 def show_4_image_in_batch(images_batch, predicted_labels, ground_truth):
     """
     Shows 4 first images from the batch of the Amazon Dataset
-    :param sample_batched: mini-batch of dataloader of Amazon Dataset. Dictionary with 'image', 'labels'
-    :param tags: All the unique labels
-    :return:
+    :param images_batch: batch of images
+    :param predicted_labels: predicted labels for the batch of images
+    :param ground_truth: ground truth of the labels for the batch of images
+    :return: plos of 4 images with predicted labels and truth labels
     """
     tags = ['haze', 'primary', 'agriculture', 'clear', 'water', 'habitation', 'road', 'cultivation', 'slash_burn',
             'cloudy', 'partly_cloudy', 'conventional_mine', 'bare_ground', 'artisinal_mine', 'blooming',
@@ -334,14 +296,14 @@ def show_4_image_in_batch(images_batch, predicted_labels, ground_truth):
     plt.show()
 
 
-def batch_prediction_s(batch, model, device="cuda", criterion=nn.BCEWithLogitsLoss()):
+def batch_prediction(batch, model, device="cuda", criterion=nn.BCEWithLogitsLoss()):
     """
     Predict the values from model for batch given. Function for the testing of the model.
-    :param criterion:
     :param batch: batch composed of 'image' and 'labels'
     :param model: model of interest
-    :param device: on which device run the thing
-    :return: loss,accuracy
+    :param device: on which device run the testing
+    :param criterion: criterion to measure the loss
+    :return: [loss, predicted, ground_truth]
     """
     model.eval()
     sig = nn.Sigmoid()
@@ -365,45 +327,33 @@ def batch_prediction_s(batch, model, device="cuda", criterion=nn.BCEWithLogitsLo
     predicted = (sig(y_hat) > 0.5).float().cpu().detach().numpy()
     ground_truth = y.cpu().detach().numpy()
 
-    mean_class_predictions = np.array((predicted == ground_truth), dtype=np.float64).mean(axis=0)
-
-    return loss.cpu().detach().numpy(), predicted, ground_truth, mean_class_predictions
+    return loss.cpu().detach().numpy(), predicted, ground_truth
 
 
-def testing_model(test_dataloader, model, device, tags):
+def testing_model(test_dataloader, model, device):
     """
     Predict the values from model for test_dataloader given. Function for the testing of the model.
     :param test_dataloader:
     :param model: model of interest
     :param device: on which device run the thing
-    :param tags: name of the classes
-    :return: report, losses
+    :return: dictionary with "predicted" and "ground_truth"
     """
-
-    # store stats
     losses = []
     count = 0
 
     for batch in tqdm(test_dataloader):
-        # TODO run prediction_step
-        loss, predicted, ground_truth, class_predictions = batch_prediction_s(batch, model, device=device)
+        # Run the prediction step
+        loss, predicted, ground_truth = batch_prediction(batch, model, device=device)
 
         # append to stats
         losses.append(loss)
 
-        # accuracies.append(accuracy)
         if count == 0:
             all_predicted = predicted
             all_truth = ground_truth
-            all_class_predictions = class_predictions
             count = 1
         else:
             all_predicted = np.vstack((all_predicted, predicted))
             all_truth = np.vstack((all_truth, ground_truth))
-            all_class_predictions = np.vstack((all_class_predictions, class_predictions))
 
-    #report = classification_report(y_true=all_truth, y_pred=all_predicted, output_dict=True, target_names=tags,
-    #                               zero_division=0)
-    #sns.heatmap(pd.DataFrame(report).iloc[:-1, :].T, annot=True, cmap="mako")
-    #return report, losses, all_prediction
-    return {'predicted': all_predicted, 'ground_truth': all_truth, "class_predictions" : all_class_predictions }
+    return {'predicted': all_predicted, 'ground_truth': all_truth }
