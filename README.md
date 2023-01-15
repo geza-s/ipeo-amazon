@@ -36,6 +36,8 @@ while all the classes are in the "module" called files.
 Finally, "IPEO_Post_Processing.ipynb" is an additionnal file regrouping all the analysis and comparison we did. 
 It is mainly creating figures for the report. 
 
+All the folders regroup the important training results (in json files) and models (in .pth).
+
 ## Dependencies (to install beforehand)
 To be able to run without issues, the following python modules should be installed:
 - numpy, matplotlib, pandas, pytorch, scikit-image, scikit-learn, datetime, json, os
