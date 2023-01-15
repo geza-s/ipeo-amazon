@@ -27,13 +27,14 @@ First, "IPEO_data_Pre_Processing.ipynb" is the file associated to the pre-proces
 the training and testing. It is not needed to be re-run to be able to train or test our models. 
 This pre-process mainly created the 3 csv which are given: "test.csv", "training.csv" and "validation.csv"
 
-
-
 The main files, here "Multilabel_classification_Amazon.ipynb" and "MultiModel_classification_Amazon.ipynb",
 are the files to run to train, validate and test the models.
 The two other associated python files integrate all the necessary functions and classes.
 All the important functions are grouped in the "engine" called files, 
 while all the classes are in the "module" called files. 
+
+Finally, "IPEO_Post_Processing.ipynb" is an additionnal file regrouping all the analysis and comparison we did. 
+It is mainly creating figures for the report. 
 
 ## Dependencies (to install beforehand)
 To be able to run without issues, the following python modules should be installed:
@@ -41,9 +42,11 @@ To be able to run without issues, the following python modules should be install
 - seaborn, tqdm, torchinfo
 
 ## Instruction to run
+The main files are all jupyter notebooks in python. 
+
 The order in which to run the notebooks is the following : 
--> IPEO_data_Pre_Processing.ipynb (To Explore and Split the data)
--> Multilabel_classification_Amazon.ipynb (To train and test the first model)
--> MultiModel_classification_Amazon.ipynb (To train and test the second model)
--> IPEO_Post_Processing.ipynb (To plot the results)
+1) IPEO_data_Pre_Processing.ipynb (Optional)(To Explore and Split the data)
+2) Multilabel_classification_Amazon.ipynb (To train and test the first model)
+3) MultiModel_classification_Amazon.ipynb (To train and test the second model)
+4) IPEO_Post_Processing.ipynb (Optional)(To plot the results)
 
