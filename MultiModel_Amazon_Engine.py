@@ -8,7 +8,7 @@ import torch.nn as nn
 from torch import no_grad
 from torch import save as torch_save
 from torch import max as torch_max
-from torch.optim import Adam
+from torch.optim import SGD
 
 from torchvision.transforms.functional import to_pil_image
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, hamming_loss, confusion_matrix
@@ -68,21 +68,20 @@ def append_mean_metrics(all_metrics_dict, batch_metrics):
 def train_epoch_solo(model_type, model, dataloader, device, lr=0.01, optimizer=None, loss_fn=None):
     """
     Loop for 1 epoch for a dual model approach
-    :param ground_model: model used for ground prediction
-    :param cloud_model: model used for cloud prediction
+    :param model_type: "ground_model" or "cloud_model"
+    :param model: model of interest to be trained
     :param dataloader: dataloader over the amazon space dataset
     :param device: device on which train, 'cuda' or 'cpu'
     :param lr: learning rate, here default = 0.01
-    :param ground_optimizer: Here if None given then using Adam
-    :param cloud_optimizer: Here if None given then using Adam
-    :param ground_loss_fn: Loss function default is BCEWithLogitsLoss (sigmoid + cross-entropy)
-    :param cloud_loss_fn: loss function associated with the cloud prediction model
-    :return: [tot_loss, accs, acc_scores, prec_scores, rec_scores, ham_loss]
+    :param optimizer: Here if None given then using SGD with a momentum of 0.9
+    :param loss_fn: Loss function default is BCEWithLogitsLoss for ground model and BCELoss for cloud model
+    :return: epoch's metrics as a dictionary with {'micro/precision', 'micro/recall', 'micro/f1', 'macro/precision',
+    'macro/recall', 'macro/f1', 'samples/precision', 'samples/recall', 'samples/f1', 'hamming_loss', 'total_loss'}
     """
     sig = nn.Sigmoid()
     model.train()
 
-    optimizer = optimizer or Adam(model.parameters(), lr=lr)
+    optimizer = optimizer or SGD(model.parameters(), lr=lr, momentum=0.9)
     print(optimizer)
 
     epoch_metrics = {'micro/precision': [], 'micro/recall': [], 'micro/f1': [], 'macro/precision': [],
@@ -92,9 +91,11 @@ def train_epoch_solo(model_type, model, dataloader, device, lr=0.01, optimizer=N
     if model_type == 'ground_model':
         print("Training the ground model")
         target_name = "ground_target"
+        loss_fn = loss_fn or nn.BCEWithLogitsLoss()
     elif model_type == 'cloud_model':
         print("Training the cloud model")
         target_name = "cloud_target"
+        loss_fn = loss_fn or nn.BCELoss()
     else:
         print("Couldn't detect model type to train... Should be either ground_model or cloud_model..")
         return False
@@ -132,8 +133,6 @@ def train_epoch_solo(model_type, model, dataloader, device, lr=0.01, optimizer=N
         batch_metrics = calculate_metrics(predicted, target.cpu().detach().numpy(), loss.cpu().detach().item())
 
         if i_batch == 0:
-            print(image_batch.size())
-            print(np.shape(predicted), np.shape(target))
             print("iter:{:3d} training:"
                   "micro f1: {:.3f}"
                   "macro f1: {:.3f} "
@@ -160,15 +159,17 @@ def train_epoch_solo(model_type, model, dataloader, device, lr=0.01, optimizer=N
 
     return epoch_metrics
 
+
 def validate_solo(model_type, model, dataloader, device, loss_fn=None):
     """
-    Function running validation loop accros the validation dataloader on dual model
+    Function running validation loop across the validation dataloader on dual model
     :param model_type: "ground_model" or "cloud_model"
     :param model: cloud detection model to validate
     :param dataloader: validation dataloader
     :param device: device : "cuda" or "cpu"
     :param loss_fn: no default !
-    :return: ...
+    :return: validation metrics as a dictionnary with {'micro/precision', 'micro/recall', 'micro/f1', 'macro/precision',
+    'macro/recall', 'macro/f1', 'samples/precision', 'samples/recall', 'samples/f1', 'hamming_loss', 'total_loss'}
     """
 
     sig = nn.Sigmoid()  # sigmoid function needed for estimated prediction
@@ -224,20 +225,21 @@ def validate_solo(model_type, model, dataloader, device, loss_fn=None):
 def train_solo(model_type, model, train_loader, validation_dataloader, device, optimizer=None, lr=0.01, epochs=2,
                loss_fn=None):
     """
-
-    :param model_type:
-    :param cloud_model:
-    :param train_loader:
-    :param validation_dataloader:
-    :param device:
-    :param optimizer:
+    Main train function for 1 model. Is adapted to train two types of model: "ground_model" or "cloud_model".
+     It is optimised to train each model one after another and independently.
+    :param model_type: "ground_model" or "cloud_model"
+    :param model: model of interest to be trained
+    :param train_loader: dataloader for training
+    :param validation_dataloader: dataloader for validation
+    :param device: device on which training is done
+    :param optimizer: optimizer function, default: SGD with a momentum of 0.9
     :param lr:
     :param epochs:
     :param loss_fn:
     :return:
     """
 
-    optimizer = optimizer or Adam(model.parameters(), lr=lr)
+    optimizer = optimizer or SGD(model.parameters(), lr=lr, momentum=0.9)
 
     overall_metrics = {'training': {'micro/precision': [], 'micro/recall': [], 'micro/f1': [],
                                     'macro/precision': [], 'macro/recall': [], 'macro/f1': [],
@@ -257,7 +259,7 @@ def train_solo(model_type, model, train_loader, validation_dataloader, device, o
         print(f"Couldn't fin model type {model_type}")
         return False
 
-    min_loss = 1000
+    min_loss = 1000  # a big first loss for model saving optimisation
 
     for ep in range(epochs):
         print(f"Training on epoch {ep}............")
@@ -352,6 +354,8 @@ def batch_prediction_multi(batch, model_ground, model_cloud, device="cpu",
     :param model_ground: model for ground labels
     :param model_cloud: model for cloud labels
     :param device: on which device run the testing
+    :param criterion_gr: criterion for measure of ground model's loss
+    :param criterion_cl: criterion for measure of cloud model's loss
     :return: 2 level dictionary of the results: {'ground', 'cloud' and 'total'} -> {'target', 'predicted' and 'loss'}
     """
 
@@ -378,12 +382,10 @@ def batch_prediction_multi(batch, model_ground, model_cloud, device="cpu",
     # Calculate accuracy for statistics
     predicted_gr = (sig(y_hat_gr) > 0.5).float().cpu().detach().numpy()
     ground_truth = y_gr.cpu().detach().numpy()
-    #accuracy_gr = np.array((predicted_gr == ground_truth), dtype=np.float64).mean(axis=0)
 
     predicted_cl = y_hat_cl.cpu().detach().numpy()
     predicted_cl = (predicted_cl == predicted_cl.max(axis=1, keepdims=True))
     cloud_truth = y_cl.cpu().detach().numpy()
-    #accuracy_cl = np.array((predicted_cl == cloud_truth), dtype=np.float64).mean(axis=0)
 
     results = {'ground': {'target': ground_truth,
                           'predicted': predicted_gr,
@@ -403,10 +405,10 @@ def show_4_image_in_batch_solo(model_type, images_batch, predicted_labels, groun
     """
     Shows 4 first images from the batch of the Amazon Dataset
     :param model_type: "combined", "cloud_model", "ground_model"
-    :param sample_batched: mini-batch of dataloader of Amazon Dataset. Dictionary with 'image', 'labels'
-    :param tags: All the unique labels
-    :param ground_truth: The ground truth vector for labels
-    :return:
+    :param images_batch: batch of images
+    :param predicted_labels: All the labels predicted for every image in the batch
+    :param ground_truth: The ground truth vector of labels for the batch
+    :return: plot of 4 images with their predicted labels and their truth labels
     """
     if model_type == 'combined':
         tags = ['haze', 'primary', 'agriculture', 'water', 'habitation', 'road', 'cultivation', 'slash_burn',

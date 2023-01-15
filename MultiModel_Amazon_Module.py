@@ -10,27 +10,6 @@ from torchvision import transforms
 import torch.nn as nn
 import torchvision.transforms as T
 
-data_folder = '../IPEO_Planet_project'
-if not os.path.exists(data_folder):
-    data_folder = input("Enter the data folder path: ")
-    assert os.path.exists(data_folder), "I did not find the folder at, " + str(data_folder)
-
-
-class AdjustSaturation(object):
-    """Adjust the saturation of a tensor image.
-    Args:
-        saturation factor (float): if 0 -> black and white, if 1 -> same as the input
-    """
-
-    def __init__(self, saturation_factor):
-        assert isinstance(saturation_factor, (int, float))
-        self.saturation_factor = saturation_factor
-
-    def __call__(self, img):
-        new_tensor = transforms.functional.adjust_saturation(img, self.saturation_factor)
-
-        return new_tensor
-
 
 class GroundCNN(nn.Module):
     def __init__(self):
