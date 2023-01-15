@@ -41,4 +41,9 @@ To be able to run without issues, the following python modules should be install
 - seaborn, tqdm, torchinfo
 
 ## Instruction to run
+The order in which to run the notebooks is the following : 
+-> IPEO_data_Pre_Processing.ipynb (To Explore and Split the data)
+-> Multilabel_classification_Amazon.ipynb (To train and test the first model)
+-> MultiModel_classification_Amazon.ipynb (To train and test the second model)
+-> IPEO_Post_Processing.ipynb (To plot the results)
 
