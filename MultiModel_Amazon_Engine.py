@@ -434,4 +434,5 @@ def show_4_image_in_batch_solo(model_type, images_batch, predicted_labels, groun
     fig.set_figheight(10)
     fig.set_figwidth(12)
     plt.tight_layout()
+    plt.grid(False)
     plt.show()
