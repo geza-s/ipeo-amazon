@@ -14,41 +14,67 @@ The main goal of this project is to create a model that can predict which label 
 The additional goal is to compare the performance of two approaches: 
 - The first approach, here often referred as "multilabel model", is the training of a CNN model with, as output, 
 a binary array of size 17, corresponding to the prediction for each label. 
-- The second approach, here often referred as "multi-model", is the training of two CNN models where one is related 
-to 3 atmospheric condition labels, and the second is related to the 14 other ground condition labels.
+- The second approach, here often referred as "multi-model", is the training of two CNN models where one is a
+multiclass classifier related to the 3 atmospheric condition labels (cloud cover), and the second is a multilabel
+classifier related to the 14 other ground condition labels.
 
-## Files structure
-The files structures consist mainly in 2 sets of 3 files: A main python jupyter notebook, 
-and two related python files ("engine" and "module").
-Each set is related to one of the two approaches: "Multilabel" for the full multilabel classifier, 
-and "Multi_Model" for the separated model approach (a multi-class classifier and a multilabel classifier).
+## Repository structure
+```
+.
+├── src/                                  # Reusable model/dataset classes ("Module") and training/eval logic ("Engine")
+│   ├── Multilabel_Amazon_Module.py
+│   ├── Multilabel_Amazon_Engine.py
+│   ├── MultiModel_Amazon_Module.py
+│   └── MultiModel_Amazon_Engine.py
+├── data/                                 # Train/validation/test splits (see IPEO_data_Pre_Processing.ipynb)
+│   ├── training.csv
+│   ├── validation.csv
+│   └── test.csv
+├── outputs/
+│   ├── Final_Models/                     # Final trained weights, training curves and metrics for all 3 models
+│   ├── param_fitting/                    # Hyperparameter search results (batch size, lr, momentum, transforms)
+│   ├── class_weight.pt                   # Class weights for the (optional) weighted multilabel loss
+│   └── class_weight_norm.pt
+├── IPEO_data_Pre_Processing.ipynb        # Data exploration and train/val/test split generation
+├── Multilabel_classification_Amazon.ipynb  # Train/test the single multilabel model
+├── MultiModel_classification_Amazon.ipynb  # Train/test the cloud (multiclass) + ground (multilabel) models
+├── IPEO_Post_Processing.ipynb            # Hyperparameter comparison and final results analysis
+└── requirements.txt
+```
 
-First, "IPEO_data_Pre_Processing.ipynb" is the file associated to the pre-processes we implemented before 
-the training and testing. It is not needed to be re-run to be able to train or test our models. 
-This pre-process mainly created the 3 csv which are given: "test.csv", "training.csv" and "validation.csv"
+Each of the two approaches is built from a notebook plus two associated Python files: "Module" groups the dataset
+and model classes, and "Engine" groups the training/evaluation functions used by that notebook.
 
-The main files, here "Multilabel_classification_Amazon.ipynb" and "MultiModel_classification_Amazon.ipynb",
+`IPEO_data_Pre_Processing.ipynb` is the file associated to the pre-processing we implemented before
+training and testing. It is not needed to be re-run to be able to train or test our models — running it produces
+the 3 csv files in `data/`, which are already provided.
+
+The main files, `Multilabel_classification_Amazon.ipynb` and `MultiModel_classification_Amazon.ipynb`,
 are the files to run to train, validate and test the models.
-The two other associated python files integrate all the necessary functions and classes.
-All the important functions are grouped in the "engine" called files, 
-while all the classes are in the "module" called files. 
 
-Finally, "IPEO_Post_Processing.ipynb" is an additionnal file regrouping all the analysis and comparison we did. 
-It is mainly creating figures for the report. 
+`IPEO_Post_Processing.ipynb` is an additional file regrouping the hyperparameter comparisons and figures used
+in the project report, reading from `outputs/param_fitting/`.
 
-All the folders regroup the important training results (in json files) and models (in .pth).
+## Results
+Final models are saved in `outputs/Final_Models/`, together with their training results (json) and training
+curves. Training loss and validation metrics (accuracy, precision, recall, F1) evolved as follows:
 
-## Dependencies (to install beforehand)
-To be able to run without issues, the following python modules should be installed:
-- numpy, matplotlib, pandas, pytorch, scikit-image, scikit-learn, datetime, json, os
-- seaborn, tqdm, torchinfo
+| Multilabel model | Cloud model | Ground model |
+|---|---|---|
+| ![Multilabel loss](outputs/Final_Models/MultilabelModel_LossEvolution.png) | ![Cloud loss](outputs/Final_Models/CloudModel_LossEvolution.png) | ![Ground loss](outputs/Final_Models/GroundModel_LossEvolution.png) |
+| ![Multilabel metrics](outputs/Final_Models/MultilabelModel_MetricsEvol.png) | ![Cloud metrics](outputs/Final_Models/CloudModel_MetricsEvol.png) | ![Ground metrics](outputs/Final_Models/GroundModel_MetricsEvol.png) |
 
-## Instruction to run
-The main files are all jupyter notebooks in python. 
+## Dependencies
+Install the required Python packages with:
+```
+pip install -r requirements.txt
+```
 
-The order in which to run the notebooks is the following : 
-1) IPEO_data_Pre_Processing.ipynb (Optional)(To Explore and Split the data)
-2) Multilabel_classification_Amazon.ipynb (To train and test the first model)
-3) MultiModel_classification_Amazon.ipynb (To train and test the second model)
-4) IPEO_Post_Processing.ipynb (Optional)(To plot the results)
+## Instructions to run
+The main files are all Jupyter notebooks in Python. 
 
+The order in which to run the notebooks is the following: 
+1) `IPEO_data_Pre_Processing.ipynb` (Optional) (To explore and split the data)
+2) `Multilabel_classification_Amazon.ipynb` (To train and test the first model)
+3) `MultiModel_classification_Amazon.ipynb` (To train and test the second model)
+4) `IPEO_Post_Processing.ipynb` (Optional) (To plot and compare the results)
