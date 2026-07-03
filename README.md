@@ -31,7 +31,8 @@ classifier related to the 14 other ground condition labels.
 │   ├── validation.csv
 │   └── test.csv
 ├── outputs/
-│   ├── Final_Models/                     # Final trained weights, training curves and metrics for all 3 models
+│   ├── Final_Models/                     # Final trained weights and metrics (json) for all 3 models
+│   ├── Figures/                          # Training curves and evaluation heatmaps
 │   ├── param_fitting/                    # Hyperparameter search results (batch size, lr, momentum, transforms)
 │   ├── class_weight.pt                   # Class weights for the (optional) weighted multilabel loss
 │   └── class_weight_norm.pt
@@ -56,13 +57,41 @@ are the files to run to train, validate and test the models.
 in the project report, reading from `outputs/param_fitting/`.
 
 ## Results
-Final models are saved in `outputs/Final_Models/`, together with their training results (json) and training
-curves. Training loss and validation metrics (accuracy, precision, recall, F1) evolved as follows:
+### Training
+Final models are saved in `outputs/Final_Models/`, together with their training results (json). Training loss
+and validation metrics (precision, recall, F1) evolved as follows:
 
 | Multilabel model | Cloud model | Ground model |
 |---|---|---|
-| ![Multilabel loss](outputs/Final_Models/MultilabelModel_LossEvolution.png) | ![Cloud loss](outputs/Final_Models/CloudModel_LossEvolution.png) | ![Ground loss](outputs/Final_Models/GroundModel_LossEvolution.png) |
-| ![Multilabel metrics](outputs/Final_Models/MultilabelModel_MetricsEvol.png) | ![Cloud metrics](outputs/Final_Models/CloudModel_MetricsEvol.png) | ![Ground metrics](outputs/Final_Models/GroundModel_MetricsEvol.png) |
+| ![Multilabel loss](outputs/Figures/MultilabelModel_LossEvolution.png) | ![Cloud loss](outputs/Figures/CloudModel_LossEvolution.png) | ![Ground loss](outputs/Figures/GroundModel_LossEvolution.png) |
+| ![Multilabel metrics](outputs/Figures/MultilabelModel_MetricsEvol.png) | ![Cloud metrics](outputs/Figures/CloudModel_MetricsEvol.png) | ![Ground metrics](outputs/Figures/GroundModel_MetricsEvol.png) |
+
+All three models train smoothly, with training and validation losses staying close together (little overfitting).
+For the cloud model in particular, one training run (lr 0.005, momentum 0.5) reached over 90% precision, recall
+and F1 on the "clear", "partly_cloudy" and "cloudy" labels before its loss curve degraded at later epochs — the
+weights checkpointed from that run are the ones kept as `CloudModel_Final.pth`.
+
+### Evaluation
+Test-set performance is reported per label (precision/recall/F1) and as global averages (micro, macro, weighted
+and samples averages), for both the single multilabel model and the combined cloud + ground approach:
+
+| Multilabel model — per-label & averages | Combined model — per-label |
+|---|---|
+| ![Multilabel evaluation](outputs/Figures/Eval_MultiLabel_Bests.png) | ![Combined model evaluation](outputs/Figures/Eval_MultiModel_Bests.png) |
+
+Global averages for both approaches, side by side for direct comparison:
+
+| Multilabel model — averages | Combined model — averages |
+|---|---|
+| ![Multilabel averages](outputs/Figures/Multilabel_evaluation_average_results.jpg) | ![Combined model averages](outputs/Figures/Combined_Models_evaluation_average_results.jpg) |
+
+Precision is generally higher than recall for both approaches, meaning true labels are more often missed than
+falsely predicted. Rarely-represented labels (`slash_burn`, `conventional_mine`, `blooming`, `selective_logging`,
+`blow_down`) score near zero in both approaches, dragging the macro average well below the micro/weighted/samples
+averages, which are dominated by common labels. The combined approach clearly improves the atmospheric labels —
+notably `partly_cloudy`, which the single model never predicts at all — and improves `water` recall (0.29 → 0.40),
+at the cost of most ground labels scoring slightly lower than in the single multilabel model. Overall F1 is very
+close between the two approaches (~0.83–0.85 samples average), so neither is a clear winner on aggregate.
 
 ## Dependencies
 Install the required Python packages with:
